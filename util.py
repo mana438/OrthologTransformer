@@ -11,6 +11,7 @@ import random
 import statistics
 import numpy as np
 import json
+import copy
 
 class alignment:
     def  __init__(self, vocab):
@@ -107,6 +108,8 @@ class alignment:
         
         plt.figure()
         # 散布図をプロット
+        # src_tgt_scores = [ ls - 0.01 for ls in src_tgt_scores]
+
         plt.scatter(src_tgt_scores, tgt_pred_scores)
 
         src_tgt_mean = np.mean(src_tgt_scores)
@@ -115,18 +118,21 @@ class alignment:
         ax = plt.gca()  # 現在のAxesオブジェクトを取得
 
         # 右下にsrc_tgt_scoresの平均値を表示
-        plt.text(0.95, 0.05, f'src-tgt Ave: {src_tgt_mean:.2f}', 
+        plt.text(0.95, 0.05, f'src-tgt Ave: {src_tgt_mean:.3f}', 
                 horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=12)
 
         # 左上にtgt_pred_scoresの平均値を表示
-        plt.text(0.05, 0.95, f'tgt-pred Ave: {tgt_pred_mean:.2f}', 
+        plt.text(0.05, 0.95, f'tgt-pred Ave: {tgt_pred_mean:.3f}', 
                 horizontalalignment='left', verticalalignment='top',
                 transform=ax.transAxes, fontsize=12)
         
         # x軸とy軸の最小値と最大値を計算
         min_value = min(min(src_tgt_scores), min(tgt_pred_scores))
         max_value = max(max(src_tgt_scores), max(tgt_pred_scores))
+
+        # min_value = 0.2
+        # max_value = 0.6
 
         
         # x=y の直線をプロット
@@ -303,3 +309,18 @@ def soft_align(encoder_out, decoder_out):
     shifted_score = (aligned_score + 1)/2
     distance = (1 / (shifted_score + 1e-6)) -1
     return distance
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
+def randomize_nested_list(nested_list, ratio):
+
+    randomized_list = copy.deepcopy(nested_list)
+    print(randomized_list)
+    for i in range(len(randomized_list)):
+        ratio_mod = ratio + (random.random()-0.5)/10
+        for j in range(len(randomized_list[i])):
+            if random.random() < ratio_mod:
+                randomized_list[i][j] = random.randint(5, 6)
+                
+    return randomized_list

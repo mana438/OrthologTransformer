@@ -33,9 +33,9 @@ class CodonTransformer(nn.Module):
         self.positional_encoding_e = nn.Embedding(1000, d_model)
         self.positional_encoding_d = nn.Embedding(1000, d_model)
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True, norm_first=True )
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True )
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_layers)
-        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward, batch_first=True, norm_first=True )
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True )
         self.decoder = nn.TransformerDecoder(self.decoder_layer, num_layers)
         
         self.fc_out_1 = nn.Linear(d_model, 200)
@@ -61,6 +61,11 @@ class CodonTransformer(nn.Module):
         self.d_model = d_model
 
     def forward(self, tgt, tgt_protein, tgt_dna, src, src_protein, src_dna):
+        # print("src")
+        # print(src)
+        # print("tgt")
+        # print(tgt)
+        
         src = self.embedding_e(src)
         src_protein = self.embedding_e_pro(src_protein)
         src_dna = self.embedding_e_dna(src_dna)

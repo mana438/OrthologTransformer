@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
 from torchtext.data.metrics import bleu_score
 
-from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align
+from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align, count_parameters, randomize_nested_list
 from model import CodonTransformer
 from read import OrthologDataset
 
@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from Bio.Seq import Seq
 
 import traceback
+import random
 
 import json
 import argparse
@@ -113,6 +114,8 @@ if args.model_input:
     model.load_state_dict(weights, strict=False)
 
 
+print(f'Total number of parameters: {count_parameters(model)}', flush=True)
+
 # 損失関数と最適化アルゴリズム
 # criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab['<pad>'])
 criterion = nn.CrossEntropyLoss()
@@ -185,7 +188,7 @@ if args.train:
                 optimizer.step()
 
                 total_loss += loss.item()
-                total_soft_align_loss += distance.item()
+                # total_soft_align_loss += distance.item()
                 num_batches += 1
         
                 if (epoch + 1) == args.num_epochs:
@@ -211,8 +214,8 @@ if args.train:
             # Calculate average loss for the epoch
             avg_loss = total_loss / num_batches
             print(f"Epoch {epoch + 1}/{args.num_epochs}, Loss: {avg_loss:.4f}", flush=True)
-            avg_soft_align_loss  = total_soft_align_loss / num_batches
-            print(f"Epoch {epoch + 1}/{args.num_epochs}, soft_Loss: {avg_soft_align_loss:.4f}", flush=True)
+            # avg_soft_align_loss  = total_soft_align_loss / num_batches
+            # print(f"Epoch {epoch + 1}/{args.num_epochs}, soft_Loss: {avg_soft_align_loss:.4f}", flush=True)
 
             # モデルの state_dict を保存
             torch.save(model.state_dict(), os.path.join(result_folder, os.path.basename("model_weights.pth")))
@@ -264,20 +267,20 @@ with torch.no_grad():
         # 正解ラベルのランク（位置）を調べる
         ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
         ranks = ranks.reshape(dec_tgt.shape)  # [batch_size, sequence_length]
-        print("codon Ranks:", ranks, flush=True)
+        # print("codon Ranks:", ranks)
 
-        # dna rank
-        # 各位置での正解ラベル（dec_tgt）がoutput_codonで上から何番目に位置するかを調べる
-        sorted_scores, sorted_indices = output_dna.sort(dim=1, descending=True)
-        sorted_indices = sorted_indices.transpose(1, 2)  # [batch_size, sequence_length, num_classes]
+        # # dna rank
+        # # 各位置での正解ラベル（dec_tgt）がoutput_codonで上から何番目に位置するかを調べる
+        # sorted_scores, sorted_indices = output_dna.sort(dim=1, descending=True)
+        # sorted_indices = sorted_indices.transpose(1, 2)  # [batch_size, sequence_length, num_classes]
 
-        # dec_tgtを[batch_size, sequence_length, 1]に拡張
-        expanded_dec_tgt = dec_tgt_dna.unsqueeze(2)  # [batch_size, sequence_length, 1]
+        # # dec_tgtを[batch_size, sequence_length, 1]に拡張
+        # expanded_dec_tgt = dec_tgt_dna.unsqueeze(2)  # [batch_size, sequence_length, 1]
 
-        # 正解ラベルのランク（位置）を調べる
-        ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
-        ranks = ranks.reshape(dec_tgt_dna.shape)  # [batch_size, sequence_length]
-        print("DNA Ranks:", ranks, flush=True)
+        # # 正解ラベルのランク（位置）を調べる
+        # ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
+        # ranks = ranks.reshape(dec_tgt_dna.shape)  # [batch_size, sequence_length]
+        # print("DNA Ranks:", ranks)
 
 
     for batch in test_loader:
@@ -324,17 +327,17 @@ with torch.no_grad():
         predicted_sequences += alignment.extract_sequences(dec_ipt)
     
     if args.train:
-        if args.horovod:
+        if args.horovod:            
             source_sequences, target_sequences , predicted_sequences = allreduce(source_sequences, target_sequences, predicted_sequences, dataset.vocab)
             # if hvd.rank() == 0:  # ここでランク0のノードのみが実行
             plot_obj = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
             plot_obj.savefig(os.path.join(result_folder, "align.png"))
-            print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]), flush=True)
+            print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]))
 
         else:
             plot_obj = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
             plot_obj.savefig(os.path.join(result_folder, "align.png"))
-            print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]), flush=True)
+            print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]))
 
     # print(''.join([dataset.vocab.index_to_token[codon] for sequence in predicted_sequences for codon in sequence ]))
     # print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]), flush=True)

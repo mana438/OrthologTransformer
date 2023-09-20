@@ -35,6 +35,8 @@ class OrthologDataset(Dataset):
         species_names = [os.path.splitext(file_name)[0] for file_name in os.listdir(self.fasta_dir) if file_name.endswith(".fasta")]
         # すべてのコドンのリスト
         codons = [f"{x}{y}{z}" for x in "ACGT" for y in "ACGT" for z in "ACGT"]
+        gap = ["---"]
+
         # すべてのアミノ酸のリスト
         amino_acids = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', '*']
         #　すべての塩基リスト
@@ -56,6 +58,17 @@ class OrthologDataset(Dataset):
         self.vocab_target_amino = spc + amino_acids
         self.vocab_target_dna = spc + dna
 
+        # 64次元の全てが0であるリスト
+        zero_list = [0] * 64
+        self.codon_dict = {}
+        # 各キーに対して64次元の全てが0であるリストを値として設定
+        for key in codons:
+            self.codon_dict[key] = zero_list.copy()
+        self.num_dict = {}
+        for i, key in enumerate(codons):
+            self.num_dict[key] = i
+
+
 
     def load_data(self, ortholog_files, exclude_test_group=False):
         # オルソログ関係ファイルを1つずつ読み込む
@@ -74,50 +87,76 @@ class OrthologDataset(Dataset):
                 self.ortholog_groups.add(ortholog_group)
                 seq1_ids = seq1.split(", ")
                 seq2_ids = seq2.split(", ")
-                                
                 # 出力配列
                 for seq1_id in seq1_ids:
                     seq1_fasta_file = os.path.join(self.fasta_dir, f"{seq1_species}.fasta")
                     seq1_seq = self.read_fasta(seq1_fasta_file, seq1_id)
                     if seq1_seq == None:
-                        continue
+                        continue              
 
                     scores = []
                     seq2_seqs = []
+                    seq2_seqs_mod = []
+                    seq1_seqs_mod = []
+                    gap_rates = []
+                    
                     # 入力配列
                     for seq2_id in seq2_ids:
                         seq2_fasta_file = os.path.join(self.fasta_dir, f"{seq2_species}.fasta")
                         seq2_seq = self.read_fasta(seq2_fasta_file, seq2_id)
                         if not seq2_seq:
                             continue
-                        seq2_seqs.append(seq2_seq)
                         try:
-                            gap_rate, alignment_score, modified_dna_seq1 = self.align(seq1_seq, seq2_seq)
+                            gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2 = self.align(seq1_seq, seq2_seq)
+                            seq2_seqs_mod.append(modified_dna_seq2)
+                            seq1_seqs_mod.append(modified_dna_seq1)
                             scores.append(alignment_score)
+                            gap_rates.append(gap_rate)
                         except ValueError as e:
                             print("value error")
-                            scores.append(0)
-                            gap_rate = 0
+                            # scores.append(0)
+                            # gap_rate = 0
 
-                    if seq1_seq == None or not bool(seq2_seqs):
-                    # if not seq1_seq or not bool(seq2_seqs):
+                    if seq1_seq == None or not bool(seq2_seqs_mod):
                         continue
 
                     # 入力配列の中で最も出力配列と類似度を高いものを選定    
-                    seq2_seq = seq2_seqs[scores.index(max(scores))]
-                    # seq1_seq = modified_dna_seq1
-                    
-                    # ペアが有効である場合、データに追加する
-                    if self.is_valid_pair(seq1_seq, seq2_seq, gap_rate) or ortholog_group == "OG999999":
-                        seq1_codons = self.convert_to_codons(seq1_seq, add_species=False)
-                        seq1_proteins = self.convert_to_amino(Seq(seq1_seq).translate(), add_species=False)
-                        seq1_dna = self.convert_to_dna(seq1_seq, add_species=False)
-                        
-                        seq2_codons = self.convert_to_codons(seq2_seq, seq1_species, seq2_species, add_species=True)
-                        seq2_proteins = self.convert_to_amino(Seq(seq2_seq).translate(), seq1_species, seq2_species, add_species=True)
-                        seq2_dna = self.convert_to_dna(seq2_seq, seq1_species, seq2_species, add_species=True)
-                        
-                        self.data.append((ortholog_group, seq1_codons, seq1_proteins, seq1_dna, seq2_codons, seq2_proteins, seq2_dna))
+                    seq2_seq_mod = seq2_seqs_mod[scores.index(max(scores))]
+                    seq1_seq_mod = seq1_seqs_mod[scores.index(max(scores))]
+                    gap_rate = gap_rates[scores.index(max(scores))]
+
+                    seq2seqs = []   
+                    seq1seqs = []
+
+                    # length = 102
+                    # if len(seq2_seq_mod) > length:
+                    #     for _ in range(30):
+                    #         start_index = random.randint(0, len(seq2_seq_mod) - length)
+                    #         substring2 = seq2_seq_mod[start_index:start_index + length]
+                    #         seq2seqs.append(substring2) 
+                    #         substring1 = seq1_seq_mod[start_index:start_index + length]
+                    #         seq1seqs.append(substring1)
+                    # else:
+                    #     seq2seqs = [seq2_seq_mod]
+                    #     seq1seqs = [seq1_seq_mod]
+
+                    seq2seqs = [seq2_seq_mod]
+                    seq1seqs = [seq1_seq_mod]
+                    # pro
+                    for seq1_seq, seq2_seq in zip(seq1seqs, seq2seqs):
+                        # ペアが有効である場合、データに追加する
+                        if self.is_valid_pair(seq1_seq, seq2_seq, gap_rate) or ortholog_group == "OG999999":
+                            seq1_codons = self.convert_to_codons(seq1_seq, add_species=False)
+                            seq1_proteins = self.convert_to_amino(Seq(seq1_seq).translate(), add_species=False)
+                            seq1_dna = self.convert_to_dna(seq1_seq, add_species=False)
+                            
+                            seq2_codons = self.convert_to_codons(seq2_seq, seq1_species, seq2_species, add_species=True)
+                            seq2_proteins = self.convert_to_amino(Seq(seq2_seq).translate(), seq1_species, seq2_species, add_species=True)
+                            seq2_dna = self.convert_to_dna(seq2_seq, seq1_species, seq2_species, add_species=True)
+                            
+                            self.data.append((ortholog_group, seq1_codons, seq1_proteins, seq1_dna, seq2_codons, seq2_proteins, seq2_dna))
+
+        # print(self.codon_dict)
 
 
 
@@ -178,7 +217,7 @@ class OrthologDataset(Dataset):
             length1 <= 2100
             and length2 <= 2100
             # and 0.97 <= (length1 / length2) <= 1.03
-            and gap_rate < 0.10
+            and gap_rate < 0.20
             and length1 % 3 == 0  # length1 が 3 で割り切れる条件を追加
             and length2 % 3 == 0  # length2 が 3 で割り切れる条件を追加
             and set(seq1.upper()) <= valid_chars
@@ -205,8 +244,8 @@ class OrthologDataset(Dataset):
 
         # ギャップの開始（作成）と延長に対するペナルティを設定します
         # これらの値は具体的な解析に応じて調整する必要があります
-        aligner.open_gap_score = -5
-        aligner.extend_gap_score = -0.5
+        aligner.open_gap_score = -10
+        aligner.extend_gap_score = -1
 
         aligner.mode = 'global'
 
@@ -220,17 +259,21 @@ class OrthologDataset(Dataset):
 
         # DNA配列の変更を計算
         modified_dna_seq1 = ""
-        # i, j = 0, 0
-        # for aa1, aa2 in zip(best_alignment[0], best_alignment[1]):
-        #     if aa1 == '-' and aa2 != '-': # seq1にギャップがある場合
-        #         modified_dna_seq1 += seq2[j:j+3]
-        #         j += 3
-        #     elif aa1 != '-' and aa2 == '-': # seq2にギャップがある場合
-        #         i += 3
-        #     else: # ギャップがない場合
-        #         modified_dna_seq1 += seq1[i:i+3]
-        #         i += 3
-        #         j += 3
+        modified_dna_seq2 = ""
+        
+        i, j = 0, 0
+        for aa1, aa2 in zip(best_alignment[0], best_alignment[1]):
+            if aa1 == '-' and aa2 != '-': # seq1にギャップがある場合
+                # modified_dna_seq1 += seq2[j:j+3]
+                j += 3
+            elif aa1 != '-' and aa2 == '-': # seq2にギャップがある場合
+                i += 3
+            else: # ギャップがない場合
+                # self.codon_dict[str(seq2[j:j+3])][self.num_dict[str(seq1[i:i+3])]] += 1
+                modified_dna_seq1 += seq1[i:i+3]
+                modified_dna_seq2 += seq2[j:j+3]
+                i += 3
+                j += 3
 
         # gapの数を数えます
         gap_count = aligned_seq1.count('-') + aligned_seq2.count('-')
@@ -239,7 +282,7 @@ class OrthologDataset(Dataset):
         gap_rate = gap_count / len(aligned_seq1)
         # アラインメントスコアを計算します
         alignment_score = best_alignment.score
-        return gap_rate, alignment_score, modified_dna_seq1
+        return gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2
 
 
     def len_vocab_input(self):
