@@ -165,25 +165,17 @@ class alignment:
 
 
 def custom_collate_fn(batch):
-    ortholog_groups, targets, targets_pro, targets_dna, inputs, inp_pros, inputs_dna = [], [], [], [], [], [], []
+    ortholog_groups, targets, inputs = [], [], []
 
-    for ortholog_group, tgt, tgt_pro,tgt_dna, inp, inp_pro, inp_dna in batch:
+    for ortholog_group, tgt, inp in batch:
         ortholog_groups.append(ortholog_group)
         targets.append(torch.tensor(tgt))
-        targets_pro.append(torch.tensor(tgt_pro))
-        targets_dna.append(torch.tensor(tgt_dna))
         
         inputs.append(torch.tensor(inp))
-        inp_pros.append(torch.tensor(inp_pro))
-        inputs_dna.append(torch.tensor(inp_dna))
 
     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
-    targets_pros_padded = pad_sequence(targets_pro, batch_first=True, padding_value=0)
-    targets_padded_dna = pad_sequence(targets_dna, batch_first=True, padding_value=0)
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
-    inputs_pros_padded = pad_sequence(inp_pros, batch_first=True, padding_value=0)
-    inputs_dna_padded =  pad_sequence(inputs_dna, batch_first=True, padding_value=0)
-    return ortholog_groups, targets_padded, targets_pros_padded, targets_padded_dna, inputs_padded, inputs_pros_padded, inputs_dna_padded
+    return ortholog_groups, targets_padded, inputs_padded
 
 def count_nonzero_matches(tensor1, tensor2):
     assert tensor1.shape == tensor2.shape, "The tensors are not the same shape"
