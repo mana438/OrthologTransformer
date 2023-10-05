@@ -108,8 +108,6 @@ class alignment:
         
         plt.figure()
         # 散布図をプロット
-        # src_tgt_scores = [ ls - 0.01 for ls in src_tgt_scores]
-
         plt.scatter(src_tgt_scores, tgt_pred_scores)
 
         src_tgt_mean = np.mean(src_tgt_scores)

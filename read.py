@@ -104,21 +104,15 @@ class OrthologDataset(Dataset):
 
                     # ペアが有効である場合、データに追加する
                     if self.is_valid_pair(seq1_seq_mod, seq2_seq_mod, gap_rate) or ortholog_group == "OG999999":
-                        seq1_codons = self.convert_to_codons(seq1_seq_mod, add_species=False)                            
-                        seq2_codons = self.convert_to_codons(seq2_seq_mod, seq1_species, seq2_species, add_species=True)                            
+                        seq1_codons = self.convert_to_codons(seq1_seq_mod, seq1_species)                            
+                        seq2_codons = self.convert_to_codons(seq2_seq_mod, seq2_species)                            
                         self.data.append((ortholog_group, seq1_codons, seq2_codons))
 
 
-    def convert_to_codons(self, seq, seq1_species=None, seq2_species=None, add_species=True):
+    def convert_to_codons(self, seq, seq_species):
         codons = [seq[i:i+3] for i in range(0, len(seq), 3)]
-
-        if add_species:
-            seq1_species_index = self.vocab[seq1_species]
-            seq2_species_index = self.vocab[seq2_species]
-            codon_seq = [self.vocab['<bos>']] + [seq1_species_index, seq2_species_index] + [self.vocab[codon] for codon in codons] + [self.vocab['<eos>']]
-        else:
-            codon_seq = [self.vocab['<bos>']] + [self.vocab[codon] for codon in codons] + [self.vocab['<eos>']]
-
+        seq_species_index = self.vocab[seq_species]
+        codon_seq = [seq_species_index] +  [self.vocab['<bos>']] + [self.vocab[codon] for codon in codons] + [self.vocab['<eos>']]
         return codon_seq
 
 
@@ -148,7 +142,7 @@ class OrthologDataset(Dataset):
             length1 <= 2100
             and length2 <= 2100
             # and 0.97 <= (length1 / length2) <= 1.03
-            and gap_rate < 0.20
+            and gap_rate < 0.30
             and length1 % 3 == 0  # length1 が 3 で割り切れる条件を追加
             and length2 % 3 == 0  # length2 が 3 で割り切れる条件を追加
             and set(seq1.upper()) <= valid_chars
@@ -175,8 +169,8 @@ class OrthologDataset(Dataset):
 
         # ギャップの開始（作成）と延長に対するペナルティを設定します
         # これらの値は具体的な解析に応じて調整する必要があります
-        aligner.open_gap_score = -10
-        aligner.extend_gap_score = -1
+        aligner.open_gap_score = -5
+        aligner.extend_gap_score = -0.1
 
         aligner.mode = 'global'
 
@@ -199,14 +193,14 @@ class OrthologDataset(Dataset):
         alignment_score = best_alignment.score
 
 
-        # DNA配列の変更を計算
+        DNA配列の変更を計算
         modified_dna_seq1 = ""
         modified_dna_seq2 = ""
         if ortholog_group not in self.test_groups:
             i, j = 0, 0
             for aa1, aa2 in zip(best_alignment[0], best_alignment[1]):
                 if aa1 == '-' and aa2 != '-': # seq1にギャップがある場合
-                    # modified_dna_seq1 += seq2[j:j+3]
+                    # modified_dna_seq1 += "---"
                     j += 3
                 elif aa1 != '-' and aa2 == '-': # seq2にギャップがある場合
                     i += 3
@@ -220,6 +214,7 @@ class OrthologDataset(Dataset):
 
         else:
             return gap_rate, alignment_score, seq1, seq2
+        # return gap_rate, alignment_score, seq1, seq2
 
 
     def len_vocab_input(self):

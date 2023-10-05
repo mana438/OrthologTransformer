@@ -241,10 +241,10 @@ with torch.no_grad():
             end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
             if end_token_count == len(src):
                 break
-        src = torch.cat((src[:, :1], src[:, 3:]), dim=1)
-        source_sequences += alignment.extract_sequences(src)
-        target_sequences += alignment.extract_sequences(tgt)
-        predicted_sequences += alignment.extract_sequences(dec_ipt)
+        # src = torch.cat((src[:, :1], src[:, 3:]), dim=1)
+        source_sequences += alignment.extract_sequences(src[:,1:])
+        target_sequences += alignment.extract_sequences(tgt[:,1:])
+        predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
     
     if args.train:
         if args.horovod:            
