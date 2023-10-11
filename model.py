@@ -24,7 +24,7 @@ class CodonTransformer(nn.Module):
 
         self.d_model = d_model
 
-    def forward(self, tgt, src):        
+    def forward(self, tgt, src, one_to_one_mask):        
         src = self.embedding_e(src)
         src = src + self.positional_encoding_e(torch.arange(src.size(dim=1)).unsqueeze(0).repeat(src.size(0), 1).to(src.device))
 
@@ -35,20 +35,20 @@ class CodonTransformer(nn.Module):
         # output = self.transformer_model(src, tgt, tgt_mask=tgt_mask) 
         memory = self.encoder(src)
 
-
-        # # memory_maskを全てTrueで初期化
-        # memory_mask = torch.ones((tgt.size(1), memory.size(1)), dtype=torch.bool)
-        # # 対角要素に対するマスクをFalseに設定するためのインデックスを作成
-        # diagonal_indices = torch.arange(0, min(tgt.size(1), memory.size(1)))
-        # # 対角要素をFalseに設定
-        # memory_mask[diagonal_indices, diagonal_indices] = False
-        # # メモリの一番最初の位置を常に参照するために、最初の列をFalseに設定
-        # memory_mask[:, 0] = False
-        # memory_mask = memory_mask.to(src.device)
-        # output = self.decoder(tgt, memory, memory_mask=memory_mask ,tgt_mask=tgt_mask)
-
-        output = self.decoder(tgt, memory, tgt_mask=tgt_mask)
-        
+        if one_to_one_mask:
+            # memory_maskを全てTrueで初期化
+            memory_mask = torch.ones((tgt.size(1), memory.size(1)), dtype=torch.bool)
+            # 対角要素に対するマスクをFalseに設定するためのインデックスを作成
+            diagonal_indices = torch.arange(0, min(tgt.size(1), memory.size(1)))
+            # 対角要素をFalseに設定
+            memory_mask[diagonal_indices, diagonal_indices] = False
+            # メモリの一番最初の位置を常に参照するために、最初の列をFalseに設定
+            memory_mask[:, 0] = False
+            memory_mask = memory_mask.to(src.device)
+            output = self.decoder(tgt, memory, memory_mask=memory_mask ,tgt_mask=tgt_mask)
+        else:
+            output = self.decoder(tgt, memory, tgt_mask=tgt_mask)
+            
         output_codon = self.fc_out_2(self.act(self.fc_out_1(output)))
-
+        
         return output_codon

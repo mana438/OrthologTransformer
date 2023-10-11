@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
 from torchtext.data.metrics import bleu_score
 
-from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align, count_parameters
+from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align, count_parameters, CG_ratio
 from model import CodonTransformer
 from read import OrthologDataset
 
@@ -62,13 +62,13 @@ else:
     dataset.split_groups(ortholog_files_train_test, 1.0)
 
 # テスト対象のオルソログ関係ファイルを読み込む
-dataset.load_data(ortholog_files_train_test, args.edition_fasta, False)
+dataset.load_data(ortholog_files_train_test, args.edition_fasta, False, args.data_alignment, args.use_gap, args.gap_open)
 print("train_test dataset: " + str(len(dataset)), flush=True)
 
 
 if args.train:
     # 学習のみのオルソログ関係ファイルを追加。ただしtest groupは読み込まない
-    dataset.load_data(ortholog_files_train, None, True)
+    dataset.load_data(ortholog_files_train, None, True, args.data_alignment, args.use_gap, args.gap_open)
 
 # データセットをトレーニングデータとテストデータに分割する
 train_dataset, test_dataset = dataset.split_dataset()
@@ -150,12 +150,14 @@ if args.train:
                 dec_tgt = tgt[:, 1:] #右に1つずらす
                 
                 optimizer.zero_grad()
-                output_codon = model(dec_ipt, src)
+                output_codon = model(dec_ipt, src, args.memory_mask)
                 
                 output_codon = output_codon.transpose(1, 2) #CrossEntropyLossの時
                 loss_codon = criterion(output_codon, dec_tgt)
                 loss = loss_codon
                 loss.backward()
+                # if args.horovod:
+                #     optimizer.synchronize() 
                 optimizer.step()
 
                 total_loss += loss.item()
@@ -203,7 +205,7 @@ with torch.no_grad():
         dec_ipt = tgt[:, :-1]
         dec_tgt = tgt[:, 1:] #右に1つずらす
 
-        output_codon = model(dec_ipt, src)
+        output_codon = model(dec_ipt, src, args.memory_mask)
         output_codon = output_codon.transpose(1, 2)
         
         # codon rank
@@ -229,7 +231,7 @@ with torch.no_grad():
             dec_ipt = tgt[:,:-1]
         
         for i in range(1000):
-            output_codon = model(dec_ipt, src)
+            output_codon = model(dec_ipt, src, args.memory_mask)
             output_codon = torch.argmax(output_codon, dim=2)
             # 最も確率の高いcodonトークンを取得
             next_item = output_codon[:, -1].unsqueeze(1) 
@@ -245,6 +247,9 @@ with torch.no_grad():
         source_sequences += alignment.extract_sequences(src[:,1:])
         target_sequences += alignment.extract_sequences(tgt[:,1:])
         predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
+
+    # ギャップを取り除く
+    predicted_sequences = [[item for item in row if item != dataset.vocab['---']] for row in predicted_sequences]
     
     if args.train:
         if args.horovod:            
@@ -252,5 +257,8 @@ with torch.no_grad():
             # if hvd.rank() == 0:  # ここでランク0のノードのみが実行
         plot_obj = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
         plot_obj.savefig(os.path.join(result_folder, "align.png"))
-    print('\n'.join([''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]))
+
+    predicted_sequences = [''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]
+    print("GC ratio " +  str(CG_ratio(predicted_sequences)))
+    print('\n'.join(predicted_sequences))
     # scheduler.step()

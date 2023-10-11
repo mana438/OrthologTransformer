@@ -41,12 +41,12 @@ class OrthologDataset(Dataset):
         spc = ['<pad>', '<bos>', '<eos>']
 
         # コドンと菌種名の両方を含むトークンのリストを作成
-        tokens =  spc + codons + species_names
+        tokens =  spc + codons + gap + species_names
         self.vocab = Vocab(tokens)
-        self.vocab_target = spc + codons
+        self.vocab_target = spc + codons + gap
 
 
-    def load_data(self, ortholog_files, edition_file=None, exclude_test_group=False):
+    def load_data(self, ortholog_files, edition_file=None, exclude_test_group=False, data_alignment=False, use_gap=False, gap_open=-10):
         # オルソログ関係ファイルを1つずつ読み込む
         for ortholog_file in ortholog_files:
             with open(ortholog_file, "r") as f:
@@ -86,7 +86,7 @@ class OrthologDataset(Dataset):
                         if not seq2_seq:
                             continue
                         try:
-                            gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2 = self.align(seq1_seq, seq2_seq, ortholog_group)
+                            gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2 = self.align(seq1_seq, seq2_seq, ortholog_group, data_alignment, use_gap, gap_open)
                             seq2_seqs_mod.append(modified_dna_seq2)
                             seq1_seqs_mod.append(modified_dna_seq1)
                             scores.append(alignment_score)
@@ -136,7 +136,7 @@ class OrthologDataset(Dataset):
     # 配列ペアが有効であるかどうかを判断する
     def is_valid_pair(self, seq1, seq2, gap_rate):
         length1, length2 = len(seq1), len(seq2)
-        valid_chars = set("ATGC")
+        valid_chars = set("ATGC-")
 
         return (
             length1 <= 2100
@@ -149,7 +149,7 @@ class OrthologDataset(Dataset):
             and set(seq2.upper()) <= valid_chars
         )
 
-    def align(self, seq1, seq2, ortholog_group):  
+    def align(self, seq1, seq2, ortholog_group, data_alignment, use_gap, gap_open):  
         # DNA配列を定義します
         seq1 = Seq(seq1)
         seq2 = Seq(seq2)
@@ -169,7 +169,7 @@ class OrthologDataset(Dataset):
 
         # ギャップの開始（作成）と延長に対するペナルティを設定します
         # これらの値は具体的な解析に応じて調整する必要があります
-        aligner.open_gap_score = -5
+        aligner.open_gap_score = gap_open
         aligner.extend_gap_score = -0.1
 
         aligner.mode = 'global'
@@ -193,28 +193,39 @@ class OrthologDataset(Dataset):
         alignment_score = best_alignment.score
 
 
-        DNA配列の変更を計算
+        # DNA配列の変更を計算
         modified_dna_seq1 = ""
         modified_dna_seq2 = ""
-        if ortholog_group not in self.test_groups:
+        if ortholog_group not in self.test_groups and data_alignment:
             i, j = 0, 0
             for aa1, aa2 in zip(best_alignment[0], best_alignment[1]):
-                if aa1 == '-' and aa2 != '-': # seq1にギャップがある場合
-                    # modified_dna_seq1 += "---"
-                    j += 3
-                elif aa1 != '-' and aa2 == '-': # seq2にギャップがある場合
-                    i += 3
-                else: # ギャップがない場合
-                    # self.codon_dict[str(seq2[j:j+3])][self.num_dict[str(seq1[i:i+3])]] += 1
-                    modified_dna_seq1 += seq1[i:i+3]
-                    modified_dna_seq2 += seq2[j:j+3]
-                    i += 3
-                    j += 3
+                if use_gap:                        
+                    if aa1 == '-' : # seq1にギャップがある場合
+                        modified_dna_seq1 += "---"
+                    else: # ギャップがない場合
+                        modified_dna_seq1 += seq1[i:i+3]
+                        i += 3
+                    if aa2 == '-':
+                        modified_dna_seq2 += "---"
+                    else:
+                        modified_dna_seq2 += seq2[j:j+3]
+                        j += 3
+                else:
+                    if aa1 == '-' and aa2 != '-': # seq1にギャップがある場合
+                        j += 3
+                    elif aa1 != '-' and aa2 == '-': # seq2にギャップがある場合
+                        i += 3
+                    else: # ギャップがない場合
+                        # self.codon_dict[str(seq2[j:j+3])][self.num_dict[str(seq1[i:i+3])]] += 1
+                        modified_dna_seq1 += seq1[i:i+3]
+                        modified_dna_seq2 += seq2[j:j+3]
+                        i += 3
+                        j += 3
+
             return gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2
 
         else:
             return gap_rate, alignment_score, seq1, seq2
-        # return gap_rate, alignment_score, seq1, seq2
 
 
     def len_vocab_input(self):

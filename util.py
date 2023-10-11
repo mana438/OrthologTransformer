@@ -32,7 +32,11 @@ class alignment:
     def extract_sequences(self, tensor):
         result = []
         for row in tensor:
-            start_idx = (row == 1).nonzero(as_tuple=True)[0][0] + 1
+            # start_idx = (row == 1).nonzero(as_tuple=True)[0][0] + 1
+            one_indices = (row == 1).nonzero(as_tuple=True)[0]
+            # 1が存在しない場合、行の最初から抽出を開始します
+            start_idx = one_indices[0] + 1 if one_indices.size(0) > 0 else 0
+        
             end_indices_2 = (row == 2).nonzero(as_tuple=True)[0]
             end_indices_0 = (row == 0).nonzero(as_tuple=True)[0]
 
@@ -314,3 +318,7 @@ def randomize_nested_list(nested_list, ratio):
                 randomized_list[i][j] = random.randint(5, 6)
                 
     return randomized_list
+
+def CG_ratio(sequences):
+    gc_contents = [ seq.count('G') + seq.count('C') for seq in sequences]
+    return sum(gc_contents) / len(gc_contents)

@@ -19,6 +19,11 @@ def get_args():
     # parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--data_alignment',type=bool, default=False)
+    parser.add_argument('--use_gap',type=bool, default=False)
+    parser.add_argument('--gap_open', type=int, default=-10)
+    
+    
     parser.add_argument('--horovod', type=bool, default=False)
 
     # model parameter
@@ -27,6 +32,7 @@ def get_args():
     parser.add_argument('--num_layers', type=int, default=20)
     parser.add_argument('--dim_feedforward', type=int, default=512)
     parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--memory_mask', type=bool, default=False)
 
     args = parser.parse_args()
 
