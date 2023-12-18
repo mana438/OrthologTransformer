@@ -27,11 +27,13 @@ def get_args():
 
     parser.add_argument('--gap_ratio', type=float, default=0.3)
     parser.add_argument('--horovod', type=bool, default=False)
+    parser.add_argument('--mcts', type=bool, default=False)
 
     # model parameter
     parser.add_argument('--d_model', type=int, default=512)
     parser.add_argument('--nhead', type=int, default=16)
-    parser.add_argument('--num_layers', type=int, default=20)
+    parser.add_argument('--num_encoder_layers', type=int, default=13)
+    parser.add_argument('--num_decoder_layers', type=int, default=13)
     parser.add_argument('--dim_feedforward', type=int, default=512)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--memory_mask', type=bool, default=False)

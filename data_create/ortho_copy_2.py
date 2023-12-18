@@ -9,7 +9,7 @@ current_dir = "/home/aca10223gf/workplace/data/CDS_aa/OrthoFinder/Results_Jul16/
 dest_dir = "/home/aca10223gf/workplace/data/sample_ortho/sample_train_3"
 
 # 総行数目標
-total_lines_target = 150000
+total_lines_target = 300000
 
 # 現在のディレクトリ下のすべてのディレクトリを取得
 all_dirs = [d for d in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir, d))]

@@ -5,8 +5,10 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
 from torchtext.data.metrics import bleu_score
+import torch.nn.functional as F
 
 from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align, count_parameters, CG_ratio
+from mcts import mcts
 from model import CodonTransformer
 from read import OrthologDataset
 
@@ -103,7 +105,7 @@ vocab_size_target = dataset.len_vocab_target()
 vocab_size_input = dataset.len_vocab_input()
 
 # モデルインスタンス生成
-model = CodonTransformer(vocab_size_target, vocab_size_input, args.d_model, args.nhead, args.num_layers, args.dim_feedforward, args.dropout).to(device)
+model = CodonTransformer(vocab_size_target, vocab_size_input, args.d_model, args.nhead, args.num_encoder_layers, args.num_decoder_layers, args.dim_feedforward, args.dropout).to(device)
 
 # 重みの読み込み
 if args.model_input:
@@ -196,51 +198,74 @@ target_sequences = []
 predicted_sequences = []
 
 with torch.no_grad():
-    for batch in test_loader:
-        tgt = batch[1].to(device)  
-        src = batch[2].to(device)
+    # for batch in test_loader:
+    #     tgt = batch[1].to(device)  
+    #     src = batch[2].to(device)
 
-        dec_ipt = tgt[:, :-1]
-        dec_tgt = tgt[:, 1:] #右に1つずらす
+    #     dec_ipt = tgt[:, :-1]
+    #     dec_tgt = tgt[:, 1:] #右に1つずらす
 
-        output_codon = model(dec_ipt, src, args.memory_mask)
-        output_codon = output_codon.transpose(1, 2)
+    #     output_codon = model(dec_ipt, src, args.memory_mask)
+    #     output_codon = output_codon.transpose(1, 2)
         
-        # codon rank
-        # 各位置での正解ラベル（dec_tgt）がoutput_codonで上から何番目に位置するかを調べる
-        sorted_scores, sorted_indices = output_codon.sort(dim=1, descending=True)
-        sorted_indices = sorted_indices.transpose(1, 2)  # [batch_size, sequence_length, num_classes]
+    #     # codon rank
+    #     # 各位置での正解ラベル（dec_tgt）がoutput_codonで上から何番目に位置するかを調べる
+    #     sorted_scores, sorted_indices = output_codon.sort(dim=1, descending=True)
+    #     sorted_indices = sorted_indices.transpose(1, 2)  # [batch_size, sequence_length, num_classes]
 
-        # dec_tgtを[batch_size, sequence_length, 1]に拡張
-        expanded_dec_tgt = dec_tgt.unsqueeze(2)  # [batch_size, sequence_length, 1]
+    #     # dec_tgtを[batch_size, sequence_length, 1]に拡張
+    #     expanded_dec_tgt = dec_tgt.unsqueeze(2)  # [batch_size, sequence_length, 1]
 
-        # 正解ラベルのランク（位置）を調べる
-        ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
-        ranks = ranks.reshape(dec_tgt.shape)  # [batch_size, sequence_length]
-        print("codon Ranks:", ranks)
+    #     # 正解ラベルのランク（位置）を調べる
+    #     ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
+    #     ranks = ranks.reshape(dec_tgt.shape)  # [batch_size, sequence_length]
+    #     print("codon Ranks:", ranks)
 
 
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)
 
-        dec_ipt = torch.tensor([[dataset.vocab['<bos>']]] * len(src), dtype=torch.long, device=device)
+        # dec_ipt = torch.tensor([[dataset.vocab['<bos>']]] * len(src), dtype=torch.long, device=device)
+        dec_ipt = tgt[:, :2]
+
         if args.edition_fasta:
             dec_ipt = tgt[:,:-1]
-        
-        for i in range(1000):
-            output_codon = model(dec_ipt, src, args.memory_mask)
-            output_codon = torch.argmax(output_codon, dim=2)
-            # 最も確率の高いcodonトークンを取得
-            next_item = output_codon[:, -1].unsqueeze(1) 
-            # 予測されたcodonトークンをデコーダの入力に追加
-            dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
 
-            # 文末を表すトークンが出力されたら終了
-            # 各行に'<eos>'が含まれているか否かを判定
-            end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
-            if end_token_count == len(src):
-                break
+        src_ite = src
+        for l in range(30):
+            print("eopch ", l, flush=True)
+            dec_ipt = tgt[:, :2]
+            for i in range(700):
+                output_codon_logits = model(dec_ipt, src_ite, args.memory_mask)
+                output_codon_probs = F.softmax(output_codon_logits, dim=2)
+                output_codon = torch.argmax(output_codon_probs, dim=2)
+
+                # 確率が0.9を上回るかどうかをチェック
+                max_probs, max_indices = output_codon_probs.max(dim=2)
+                adopt_indices = max_probs > 0.97        
+                # 予測されたcodonトークンをデコーダの入力に追加
+                try:
+                    next_item = torch.where(adopt_indices[:, -1].unsqueeze(1), output_codon[:, -1].unsqueeze(1), src_ite[:, dec_ipt.size(1)].unsqueeze(1))
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    # エラーが発生した場合の代替処理
+                    next_item = output_codon[:, -1].unsqueeze(1)
+
+                # 最も確率の高いcodonトークンを取得
+                # next_item = output_codon[:, -1].unsqueeze(1)
+
+                # 予測されたcodonトークンをデコーダの入力に追加
+                dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
+
+                # 文末を表すトークンが出力されたら終了
+                # 各行に'<eos>'が含まれているか否かを判定
+                end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
+                if end_token_count == len(src):
+                    # src_ite = dec_ipt.detach()
+                    src_ite = torch.cat((src[:, :2], dec_ipt[:, 2:]), dim=1)                        
+                    break
+
         source_sequences += alignment.extract_sequences(src[:,1:])
         target_sequences += alignment.extract_sequences(tgt[:,1:])
         predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
@@ -255,12 +280,13 @@ with torch.no_grad():
         plot_obj = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
         plot_obj.savefig(os.path.join(result_folder, "align.png"))
 
-    predicted_sequences = [''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]
-    print("GC ratio " +  str(CG_ratio(predicted_sequences)))
-    print('\n'.join(predicted_sequences))
+    predicted_sequences = [[dataset.vocab.index_to_token[codon] for codon in sequence] for sequence in predicted_sequences]
+    predicted_sequences_all = [''.join(sequence) for sequence in predicted_sequences]
+    print("GC ratio " +  str(CG_ratio(predicted_sequences_all)))
+    print('\n'.join(predicted_sequences_all))
 
-    # if args.mcts:
-        
+    if args.mcts:
+        mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, args.memory_mask, result_folder)
 
 
 

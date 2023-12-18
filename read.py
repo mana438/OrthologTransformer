@@ -6,12 +6,40 @@ from Bio import Align
 from Bio.Align import substitution_matrices
 from Bio.Seq import Seq
 import time
+import json
 
 class Vocab:
-    def __init__(self, tokens):
+    def __init__(self, tokens, json_path):
+        self.json_path = json_path
         self.token_to_index = {}
         self.index_to_token = {}
+        self.load_json()  # JSONファイルからデータを読み込む
         self.build_vocab(tokens)
+
+    def load_json(self):
+        if os.path.exists(self.json_path) and os.path.getsize(self.json_path) > 0:
+            try:
+                with open(self.json_path, 'r') as file:
+                    data = json.load(file)
+                    self.token_to_index = data.get('token_to_index', {})
+                    self.index_to_token = {int(key): val for key, val in data.get('index_to_token', {}).items()}
+            except json.JSONDecodeError:
+                # JSON ファイルが空または不正な場合は、初期化する
+                self.token_to_index = {}
+                self.index_to_token = {}
+        else:
+            # ファイルが存在しない場合は、初期化する
+            self.token_to_index = {}
+            self.index_to_token = {}
+
+
+    def save_json(self):
+        data = {
+            'token_to_index': self.token_to_index,
+            'index_to_token': {str(key): val for key, val in self.index_to_token.items()}
+        }
+        with open(self.json_path, 'w') as file:
+            json.dump(data, file)
 
     def build_vocab(self, tokens):
         for token in tokens:
@@ -19,6 +47,8 @@ class Vocab:
                 index = len(self.token_to_index)
                 self.token_to_index[token] = index
                 self.index_to_token[index] = token
+                self.save_json()  # 新しいトークンを追加するたびにJSONファイルを更新
+
 
     def __len__(self):
         return len(self.token_to_index)
@@ -27,7 +57,7 @@ class Vocab:
         return self.token_to_index[token]
 
 class OrthologDataset(Dataset):
-    def __init__(self, fasta_dir):
+    def __init__(self, fasta_dir, json_path = "/home/aca10223gf/workplace/mtgenome/vocab.json"):
         self.data = []
         self.ortholog_groups = set()
         self.fasta_dir = fasta_dir
@@ -42,7 +72,7 @@ class OrthologDataset(Dataset):
 
         # コドンと菌種名の両方を含むトークンのリストを作成
         tokens =  spc + codons + gap + species_names
-        self.vocab = Vocab(tokens)
+        self.vocab = Vocab(tokens, json_path)
         self.vocab_target = spc + codons + gap
 
 
