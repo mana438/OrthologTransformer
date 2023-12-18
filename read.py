@@ -46,7 +46,7 @@ class OrthologDataset(Dataset):
         self.vocab_target = spc + codons + gap
 
 
-    def load_data(self, ortholog_files, edition_file=None, exclude_test_group=False, data_alignment=False, use_gap=False, gap_open=-10):
+    def load_data(self, ortholog_files, edition_file=None, exclude_test_group=False, data_alignment=False, use_gap=False, gap_open=-10, gap_extend=-0.1, gap_ratio=0.3):
         # オルソログ関係ファイルを1つずつ読み込む
         for ortholog_file in ortholog_files:
             with open(ortholog_file, "r") as f:
@@ -86,7 +86,7 @@ class OrthologDataset(Dataset):
                         if not seq2_seq:
                             continue
                         try:
-                            gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2 = self.align(seq1_seq, seq2_seq, ortholog_group, data_alignment, use_gap, gap_open)
+                            gap_rate, alignment_score, modified_dna_seq1, modified_dna_seq2 = self.align(seq1_seq, seq2_seq, ortholog_group, data_alignment, use_gap, gap_open, gap_extend)
                             seq2_seqs_mod.append(modified_dna_seq2)
                             seq1_seqs_mod.append(modified_dna_seq1)
                             scores.append(alignment_score)
@@ -103,7 +103,7 @@ class OrthologDataset(Dataset):
                     gap_rate = gap_rates[scores.index(max(scores))]
 
                     # ペアが有効である場合、データに追加する
-                    if self.is_valid_pair(seq1_seq_mod, seq2_seq_mod, gap_rate) or ortholog_group == "OG999999":
+                    if self.is_valid_pair(seq1_seq_mod, seq2_seq_mod, gap_rate, gap_ratio) or ortholog_group == "OG999999":
                         seq1_codons = self.convert_to_codons(seq1_seq_mod, seq1_species)                            
                         seq2_codons = self.convert_to_codons(seq2_seq_mod, seq2_species)                            
                         self.data.append((ortholog_group, seq1_codons, seq2_codons))
@@ -134,7 +134,7 @@ class OrthologDataset(Dataset):
         return seq
 
     # 配列ペアが有効であるかどうかを判断する
-    def is_valid_pair(self, seq1, seq2, gap_rate):
+    def is_valid_pair(self, seq1, seq2, gap_rate, gap_ratio):
         length1, length2 = len(seq1), len(seq2)
         valid_chars = set("ATGC-")
 
@@ -142,14 +142,14 @@ class OrthologDataset(Dataset):
             length1 <= 2100
             and length2 <= 2100
             # and 0.97 <= (length1 / length2) <= 1.03
-            and gap_rate < 0.30
+            and gap_rate < gap_ratio
             and length1 % 3 == 0  # length1 が 3 で割り切れる条件を追加
             and length2 % 3 == 0  # length2 が 3 で割り切れる条件を追加
             and set(seq1.upper()) <= valid_chars
             and set(seq2.upper()) <= valid_chars
         )
 
-    def align(self, seq1, seq2, ortholog_group, data_alignment, use_gap, gap_open):  
+    def align(self, seq1, seq2, ortholog_group, data_alignment, use_gap, gap_open, gap_extend):  
         # DNA配列を定義します
         seq1 = Seq(seq1)
         seq2 = Seq(seq2)
@@ -170,7 +170,7 @@ class OrthologDataset(Dataset):
         # ギャップの開始（作成）と延長に対するペナルティを設定します
         # これらの値は具体的な解析に応じて調整する必要があります
         aligner.open_gap_score = gap_open
-        aligner.extend_gap_score = -0.1
+        aligner.extend_gap_score = gap_extend
 
         aligner.mode = 'global'
 

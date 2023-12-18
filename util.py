@@ -320,5 +320,5 @@ def randomize_nested_list(nested_list, ratio):
     return randomized_list
 
 def CG_ratio(sequences):
-    gc_contents = [ seq.count('G') + seq.count('C') for seq in sequences]
+    gc_contents = [ (seq.count('G') + seq.count('C')) / len(seq) for seq in sequences]
     return sum(gc_contents) / len(gc_contents)

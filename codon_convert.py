@@ -62,13 +62,13 @@ else:
     dataset.split_groups(ortholog_files_train_test, 1.0)
 
 # テスト対象のオルソログ関係ファイルを読み込む
-dataset.load_data(ortholog_files_train_test, args.edition_fasta, False, args.data_alignment, args.use_gap, args.gap_open)
+dataset.load_data(ortholog_files_train_test, args.edition_fasta, False, args.data_alignment, args.use_gap, args.gap_open, args.gap_extend, args.gap_ratio)
 print("train_test dataset: " + str(len(dataset)), flush=True)
 
 
 if args.train:
     # 学習のみのオルソログ関係ファイルを追加。ただしtest groupは読み込まない
-    dataset.load_data(ortholog_files_train, None, True, args.data_alignment, args.use_gap, args.gap_open)
+    dataset.load_data(ortholog_files_train, None, True, args.data_alignment, args.use_gap, args.gap_open, args.gap_extend, args.gap_ratio)
 
 # データセットをトレーニングデータとテストデータに分割する
 train_dataset, test_dataset = dataset.split_dataset()
@@ -156,8 +156,6 @@ if args.train:
                 loss_codon = criterion(output_codon, dec_tgt)
                 loss = loss_codon
                 loss.backward()
-                # if args.horovod:
-                #     optimizer.synchronize() 
                 optimizer.step()
 
                 total_loss += loss.item()
@@ -243,7 +241,6 @@ with torch.no_grad():
             end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
             if end_token_count == len(src):
                 break
-        # src = torch.cat((src[:, :1], src[:, 3:]), dim=1)
         source_sequences += alignment.extract_sequences(src[:,1:])
         target_sequences += alignment.extract_sequences(tgt[:,1:])
         predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
@@ -261,4 +258,10 @@ with torch.no_grad():
     predicted_sequences = [''.join([dataset.vocab.index_to_token[codon] for codon in sequence]) for sequence in predicted_sequences]
     print("GC ratio " +  str(CG_ratio(predicted_sequences)))
     print('\n'.join(predicted_sequences))
-    # scheduler.step()
+
+    # if args.mcts:
+        
+
+
+
+    
