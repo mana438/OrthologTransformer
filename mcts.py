@@ -24,11 +24,11 @@ class Node:
     def best_child(self):
         # UCB1アルゴリズムを使用して最良の子ノードを選択
         return max(self.children, key=lambda node: node.value / (node.visits + 1e-6) +
-                                        math.sqrt(10 * math.log(self.visits + 1) / (node.visits + 1e-6)) +  random.uniform(0, 1))
+                                        0.5 * math.sqrt(math.log(self.visits + 1) / (node.visits + 1e-6)))
 
     def expand(self, model, vocab, src, memory_mask, len_original_seq):
         # ノードが完全に展開されていない場合、新しい子ノードを作成
-        if self.visits > 6 and not self.is_fully_expanded() and self.depth < len_original_seq:
+        if self.visits > 3 and not self.is_fully_expanded() and self.depth < len_original_seq:
             # トークンの確率を取得
             output_codon = model(self.dec_ipt, src, memory_mask)
             # Softmaxを適用して確率を正規化
@@ -54,7 +54,7 @@ class Node:
                     child = Node(new_sequence, dec_ipt, parent=self, depth=self.depth+1)
                     self.children.append(child)
 
-def reward(sequence, target_gc_content=0.475):
+def reward(sequence, target_gc_content=0.365):
     if '<eos>' in sequence:
         sequence.remove('<eos>')
     if '<bos>' in sequence:
@@ -64,7 +64,7 @@ def reward(sequence, target_gc_content=0.475):
     gc_content = (sequence.count('G') + sequence.count('C')) / len(sequence)
     ss, mfe = RNA.fold(sequence)
     
-    gc_content_reward = 10/100**abs(gc_content - target_gc_content)
+    gc_content_reward = 15/100**abs(gc_content - target_gc_content)
     mfe_reward = abs(mfe)/50
     all_reward = gc_content_reward + mfe_reward
     return all_reward, mfe, gc_content
@@ -171,7 +171,9 @@ def mcts(model, test_loader, vocab, device, edition_fasta, original_seq, memory_
         sequence=[]
         if edition_fasta:
             dec_ipt = tgt[:,:-1]
-            sequence = [[vocab.index_to_token[codon] for codon in sequence] for sequence in dec_ipt][0]
+            sequence = [[vocab.index_to_token[int(codon)] for codon in sequence] for sequence in dec_ipt][0]
+            sequence = sequence[2:]
+            print(sequence)
         
         root = Node(sequence=sequence, dec_ipt=dec_ipt)  # 初期状態のノードを作成
         main_loop(root, model, vocab, tgt, src, original_seq[0], memory_mask, result_folder)  # MCTSを実行

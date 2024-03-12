@@ -59,7 +59,7 @@ fasta_dir = args.fasta_dir
 dataset = OrthologDataset(fasta_dir)
 # test groupを生成
 if args.train:
-    dataset.split_groups(ortholog_files_train_test)
+    dataset.split_groups(ortholog_files_train_test, args.test_ratio)
 else:
     dataset.split_groups(ortholog_files_train_test, 1.0)
 
@@ -198,30 +198,6 @@ target_sequences = []
 predicted_sequences = []
 
 with torch.no_grad():
-    # for batch in test_loader:
-    #     tgt = batch[1].to(device)  
-    #     src = batch[2].to(device)
-
-    #     dec_ipt = tgt[:, :-1]
-    #     dec_tgt = tgt[:, 1:] #右に1つずらす
-
-    #     output_codon = model(dec_ipt, src, args.memory_mask)
-    #     output_codon = output_codon.transpose(1, 2)
-        
-    #     # codon rank
-    #     # 各位置での正解ラベル（dec_tgt）がoutput_codonで上から何番目に位置するかを調べる
-    #     sorted_scores, sorted_indices = output_codon.sort(dim=1, descending=True)
-    #     sorted_indices = sorted_indices.transpose(1, 2)  # [batch_size, sequence_length, num_classes]
-
-    #     # dec_tgtを[batch_size, sequence_length, 1]に拡張
-    #     expanded_dec_tgt = dec_tgt.unsqueeze(2)  # [batch_size, sequence_length, 1]
-
-    #     # 正解ラベルのランク（位置）を調べる
-    #     ranks = (sorted_indices == expanded_dec_tgt).nonzero(as_tuple=True)[2] + 1  # 1-based rank
-    #     ranks = ranks.reshape(dec_tgt.shape)  # [batch_size, sequence_length]
-    #     print("codon Ranks:", ranks)
-
-
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)
@@ -232,39 +208,22 @@ with torch.no_grad():
         if args.edition_fasta:
             dec_ipt = tgt[:,:-1]
 
-        src_ite = src
-        for l in range(30):
-            print("eopch ", l, flush=True)
-            dec_ipt = tgt[:, :2]
-            for i in range(700):
-                output_codon_logits = model(dec_ipt, src_ite, args.memory_mask)
-                output_codon_probs = F.softmax(output_codon_logits, dim=2)
-                output_codon = torch.argmax(output_codon_probs, dim=2)
+        for i in range(700):
+            output_codon_logits = model(dec_ipt, src, args.memory_mask)
+            output_codon_probs = F.softmax(output_codon_logits, dim=2)
+            output_codon = torch.argmax(output_codon_probs, dim=2)
 
-                # 確率が0.9を上回るかどうかをチェック
-                max_probs, max_indices = output_codon_probs.max(dim=2)
-                adopt_indices = max_probs > 0.97        
-                # 予測されたcodonトークンをデコーダの入力に追加
-                try:
-                    next_item = torch.where(adopt_indices[:, -1].unsqueeze(1), output_codon[:, -1].unsqueeze(1), src_ite[:, dec_ipt.size(1)].unsqueeze(1))
-                except Exception as e:
-                    print(f"An error occurred: {e}")
-                    # エラーが発生した場合の代替処理
-                    next_item = output_codon[:, -1].unsqueeze(1)
+            # 最も確率の高いcodonトークンを取得
+            next_item = output_codon[:, -1].unsqueeze(1)
 
-                # 最も確率の高いcodonトークンを取得
-                # next_item = output_codon[:, -1].unsqueeze(1)
+            # 予測されたcodonトークンをデコーダの入力に追加
+            dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
 
-                # 予測されたcodonトークンをデコーダの入力に追加
-                dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
-
-                # 文末を表すトークンが出力されたら終了
-                # 各行に'<eos>'が含まれているか否かを判定
-                end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
-                if end_token_count == len(src):
-                    # src_ite = dec_ipt.detach()
-                    src_ite = torch.cat((src[:, :2], dec_ipt[:, 2:]), dim=1)                        
-                    break
+            # 文末を表すトークンが出力されたら終了
+            # 各行に'<eos>'が含まれているか否かを判定
+            end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
+            if end_token_count == len(src):
+                break
 
         source_sequences += alignment.extract_sequences(src[:,1:])
         target_sequences += alignment.extract_sequences(tgt[:,1:])
