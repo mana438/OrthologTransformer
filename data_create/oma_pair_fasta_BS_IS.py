@@ -1,5 +1,6 @@
 from Bio import SeqIO
 import random
+import os
 
 # 菌種リストを読み込む関数
 def load_species_list(species_list_file):
@@ -45,10 +46,24 @@ def load_selected_groups(orthologous_groups_file, selected_groups_file, species_
 def extract_and_write_pairs(fasta_file, groups, output_dir, mode):
     sequences = SeqIO.to_dict(SeqIO.parse(fasta_file, "fasta"))
 
+    # input_species, output_species = "IDESA", "BACSU"
+    # input_species, output_species, output_dir = "PSEPG", "ECO10", output_dir.replace("BS_IS", "E1_PP")
+    # input_species, output_species, output_dir = "STREK", "BACSU", output_dir.replace("BS_IS", "BS_SE")
+    # input_species, output_species, output_dir = "AZOVD", "LACAC", output_dir.replace("BS_IS", "LA_AV")
+    # input_species, output_species, output_dir = "DEIRA", "SALT1", output_dir.replace("BS_IS", "ST_DR")	
+    # input_species, output_species, output_dir = "SYNJA", "ECO10", output_dir.replace("BS_IS", "E1_SJ")	
+    # input_species, output_species, output_dir = "RHIL3", "PSEF5", output_dir.replace("BS_IS", "PF_RL")		
+    # input_species, output_species, output_dir = "MYCTC", "ECO10", output_dir.replace("BS_IS", "E1_MT")
+    input_species, output_species, output_dir = "THET2", "LACLA", output_dir.replace("BS_IS", "LL_TT")
+
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     for group_number, ids in groups.items():
-        bacsu_ids = [id for id in ids if id[:5] == "BACSU"]
-        idesa_ids = [id for id in ids if id[:5] == "IDESA"]
-        other_ids = [id for id in ids if id[:5] not in ["BACSU", "IDESA"]]
+        bacsu_ids = [id for id in ids if id[:5] == output_species]
+        idesa_ids = [id for id in ids if id[:5] == input_species]
+        other_ids = [id for id in ids if id[:5] not in [output_species, input_species]]
 
         pairs = []
         if mode == "train":

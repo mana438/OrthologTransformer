@@ -16,9 +16,12 @@ class CodonTransformer(nn.Module):
         self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True )
         self.decoder = nn.TransformerDecoder(self.decoder_layer, num_decoder_layers)
         
-        self.fc_out_1 = nn.Linear(d_model, 200)
+        self.fc_out_1 = nn.Linear(d_model, 512)
+        self.fc_out_2 = nn.Linear(512, 256)
+        self.fc_out_3 = nn.Linear(256, vocab_size_target)
         self.act = nn.ReLU()
-        self.fc_out_2 = nn.Linear(200, vocab_size_target)
+
+
 
         # self.transformer_model = nn.Transformer(d_model=d_model, nhead=nhead,num_encoder_layers=num_layers, num_decoder_layers=num_layers, dim_feedforward=dim_feedforward, dropout=dropout, norm_first=True , batch_first=True)
 
@@ -49,6 +52,6 @@ class CodonTransformer(nn.Module):
         else:
             output = self.decoder(tgt, memory, tgt_mask=tgt_mask)
             
-        output_codon = self.fc_out_2(self.act(self.fc_out_1(output)))
+        output_codon = self.fc_out_3(self.act(self.fc_out_2(self.act(self.fc_out_1(output)))))
         
         return output_codon

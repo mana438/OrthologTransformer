@@ -45,35 +45,20 @@ with open(os.path.join(result_folder, "args.json"), "w") as f:
 # 標準出力先の変更
 sys.stdout = open(os.path.join(result_folder, "output.txt"), "w")
 
+
+# OMA_speciesファイル
+OMA_species = args.OMA_species
+# OrthologDataset オブジェクトを作成する
+dataset = OrthologDataset(OMA_species)
 # テスト対象のオルソログ関係ファイルのリスト
-ortholog_files_train_test = glob.glob(args.ortholog_files_train_test)
+ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
+test_dataset = dataset.load_data(ortholog_files_test, False)
 
 if args.train:
     # 学習のみのオルソログ関係ファイルのリスト
     ortholog_files_train = glob.glob(args.ortholog_files_train.replace("'", ""))
+    train_dataset = dataset.load_data(ortholog_files_train, args.reverse)
 
-# FASTAファイルが格納されているディレクトリ
-fasta_dir = args.fasta_dir
-
-# OrthologDataset オブジェクトを作成する
-dataset = OrthologDataset(fasta_dir)
-# test groupを生成
-if args.train:
-    dataset.split_groups(ortholog_files_train_test, args.test_ratio)
-else:
-    dataset.split_groups(ortholog_files_train_test, 1.0)
-
-# テスト対象のオルソログ関係ファイルを読み込む
-dataset.load_data(ortholog_files_train_test, args.edition_fasta, False, args.data_alignment, args.use_gap, args.gap_open, args.gap_extend, args.gap_ratio)
-print("train_test dataset: " + str(len(dataset)), flush=True)
-
-
-if args.train:
-    # 学習のみのオルソログ関係ファイルを追加。ただしtest groupは読み込まない
-    dataset.load_data(ortholog_files_train, None, True, args.data_alignment, args.use_gap, args.gap_open, args.gap_extend, args.gap_ratio)
-
-# データセットをトレーニングデータとテストデータに分割する
-train_dataset, test_dataset = dataset.split_dataset()
 
 #######
 print("train: ", len(train_dataset), flush=True)
@@ -246,7 +231,3 @@ with torch.no_grad():
 
     if args.mcts:
         mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, args.memory_mask, result_folder)
-
-
-
-    

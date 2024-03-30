@@ -69,26 +69,30 @@ def reward(sequence, target_gc_content=0.365):
     all_reward = gc_content_reward + mfe_reward
     return all_reward, mfe, gc_content
 
-def simulate(node, model, src, original_seq, vocab, memory_mask):
+def simulate(node, model, src, original_seq, vocab, memory_mask, epoch):
     # ロールアウトフェーズ: ランダムにアクションを選択し、最終状態で報酬を計算
-    sequence = node.sequence.copy()  # 現在のシーケンスをコピー
-    sequence = sequence + original_seq[len(sequence) : ]
-    # dec_ipt = node.dec_ipt.detach()
-    # for i in range(1000):
-    #     output_codon = model(dec_ipt, src, memory_mask)
-    #     output_codon = torch.argmax(output_codon, dim=2)
-    #     # 最も確率の高いcodonトークンを取得
-    #     next_item = output_codon[:, -1].unsqueeze(1) 
-    #     # 予測されたcodonトークンをデコーダの入力に追加
-    #     dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
+    
+    if (epoch % 1000) == 0:
+        dec_ipt = node.dec_ipt.detach()
+        for i in range(1000):
+            output_codon = model(dec_ipt, src, memory_mask)
+            output_codon = torch.argmax(output_codon, dim=2)
+            # 最も確率の高いcodonトークンを取得
+            next_item = output_codon[:, -1].unsqueeze(1) 
+            # 予測されたcodonトークンをデコーダの入力に追加
+            dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
 
-    #     sequence.append(vocab.index_to_token[next_item[0].item()])
+            sequence.append(vocab.index_to_token[next_item[0].item()])
 
-    #     # 文末を表すトークンが出力されたら終了
-    #     # 各行に'<eos>'が含まれているか否かを判定
-    #     end_token_count = (dec_ipt == vocab['<eos>']).any(dim=1).sum().item()
-    #     if end_token_count == len(src):
-    #         break
+            # 文末を表すトークンが出力されたら終了
+            # 各行に'<eos>'が含まれているか否かを判定
+            end_token_count = (dec_ipt == vocab['<eos>']).any(dim=1).sum().item()
+            if end_token_count == len(src):
+                break
+    else:
+        sequence = node.sequence.copy()  # 現在のシーケンスをコピー
+        sequence = sequence + original_seq[len(sequence) : ]
+
     return sequence  # 最終的なシーケンスに対する報酬を計算
 
 def backpropagate(node, value):
@@ -114,7 +118,7 @@ def main_loop(root, model, vocab, tgt, src, original_seq, memory_mask, result_fo
             child = node.children[0]  # 最初に追加された子ノードを取得
         else:
             child = node
-        sequence = simulate(child, model, src, original_seq, vocab, memory_mask)  # 子ノードに対してシミュレーションを実行
+        sequence = simulate(child, model, src, original_seq, vocab, memory_mask, i)  # 子ノードに対してシミュレーションを実行
         all_reward, mfe, gc_content = reward(sequence)
         print("tree depth =", child.depth)
         print("full seq length =", len(sequence))
