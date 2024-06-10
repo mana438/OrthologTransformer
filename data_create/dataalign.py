@@ -77,8 +77,8 @@ def align_sequences(file_list, output_dir, use_gap=True):
             f.write(f">{seq2_id}\n{modified_dna_seq2}\n")
 
 # 使用例
-input_dir = "/home/aca10223gf/workplace/data/OMA_database/full_data/train_fasta/"
-output_dir = "/home/aca10223gf/workplace/data/OMA_database/full_data_align/train_fasta"
+input_dir = "/home/aca10223gf/workplace/data/OMA_database/cdhit_80/train_fasta/"
+output_dir = "/home/aca10223gf/workplace/data/OMA_database/cdhit_80_align/train_fasta"
 
 # 入力ディレクトリ内のFASTAファイルを取得
 fasta_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".fasta")]

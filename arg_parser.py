@@ -8,13 +8,12 @@ def get_args():
     parser.add_argument('--ortholog_files_test', type=str)
     parser.add_argument('--ortholog_files_train', type=str)
     parser.add_argument('--OMA_species', type=str, default="/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt")
-    parser.add_argument('--fasta_dir', type=str, default="/home/aca10223gf/workplace/data/CDS_dna")
-    parser.add_argument('--edition_fasta', type=str)
+    parser.add_argument('--edition_fasta', action='store_true')
     
 
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--reverse', type=bool, default=False)
-    parser.add_argument('--test_ratio', type=float, default=0.1)
+
     # hvd
     parser.add_argument('--learning_rate', type=float, default=0.0005)
     # nomal

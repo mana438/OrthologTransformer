@@ -58,10 +58,10 @@ if args.train:
     # 学習のみのオルソログ関係ファイルのリスト
     ortholog_files_train = glob.glob(args.ortholog_files_train.replace("'", ""))
     train_dataset = dataset.load_data(ortholog_files_train, args.reverse)
-
+    print("train: ", len(train_dataset), flush=True)
 
 #######
-print("train: ", len(train_dataset), flush=True)
+
 print("test: ", len(test_dataset), flush=True)
 #########
 
