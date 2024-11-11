@@ -58,7 +58,7 @@ class Vocab:
         return self.token_to_index[token]
 
 class OrthologDataset(Dataset):
-    def __init__(self, OMA_species, json_path = "/home/aca10223gf/workplace/mtgenome/vocab_OMA.json"):
+    def __init__(self, OMA_species, json_path):
         self.data = []
         self.ortholog_groups = set()
         # すべての菌種名のリストを取得

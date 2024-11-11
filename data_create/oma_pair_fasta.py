@@ -43,11 +43,11 @@ def load_selected_groups(orthologous_groups_file, selected_groups_file, species_
 
 # 抽出した配列ペアをFASTAファイルに保存する関数
 def extract_and_write_pairs(fasta_file, groups, output_dir):
-    print("HERE")
+    # print("HERE")
     sequences = SeqIO.to_dict(SeqIO.parse(fasta_file, "fasta"))  # FASTAファイルから配列を読み込み
 
     for group_number, ids in groups.items():
-        print("HERE2")
+        # print("HERE2")
         original_ids = ids.copy()  # オリジナルのIDリストをコピー
         i = 0
         while ids:
@@ -72,9 +72,9 @@ def extract_and_write_pairs(fasta_file, groups, output_dir):
 # トレーニング用とテスト用のグループデータを処理する関数
 def process_groups(train_groups_file, test_groups_file, oma_group_file, fasta_file, species_list, train_output_dir, test_output_dir):
     species_list = load_species_list(species_list_file)  # 菌種リストを読み込み
-    print(species_list)
+    # print(species_list)
     train_groups = load_selected_groups(oma_group_file, train_groups_file, species_list)  # トレーニンググループを読み込み
-    print(train_groups)
+    # print(train_groups)
     test_groups = load_selected_groups(oma_group_file, test_groups_file, species_list)  # テストグループを読み込み
     
     # トレーニングデータのペアを抽出してFASTAファイルに保存
@@ -82,14 +82,23 @@ def process_groups(train_groups_file, test_groups_file, oma_group_file, fasta_fi
     # テストデータのペアを抽出してFASTAファイルに保存
     extract_and_write_pairs(fasta_file, test_groups, test_output_dir)
 
-# メイン処理
-species_list_file = '/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt'  # 菌種リストファイルのパス
-oma_group_file = '/home/aca10223gf/workplace/data/OMA_database/oma-groups.txt' # OMAgroupと配列IDのファイル
-train_groups_file = '/home/aca10223gf/workplace/data/OMA_database/train_group.txt'  # トレーニンググループファイルのパス
-test_groups_file = '/home/aca10223gf/workplace/data/OMA_database/test_group.txt'  # テストグループファイルのパス
-fasta_file = '/home/aca10223gf/workplace/data/OMA_database/prokaryotes.cdna.fa'  # 配列が格納されたFASTAファイルのパス
-train_output_dir = '/home/aca10223gf/workplace/data/OMA_database/full_data/train_fasta'  # トレーニングデータ出力ディレクトリ
-test_output_dir = '/home/aca10223gf/workplace/data/OMA_database/full_data/test_fasta'  # テストデータ出力ディレクトリ
+# メイン処理(abci)
+# species_list_file = '/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt'  # 菌種リストファイルのパス
+# oma_group_file = '/home/aca10223gf/workplace/data/OMA_database/oma-groups.txt' # OMAgroupと配列IDのファイル
+# train_groups_file = '/home/aca10223gf/workplace/data/OMA_database/train_group.txt'  # トレーニンググループファイルのパス
+# test_groups_file = '/home/aca10223gf/workplace/data/OMA_database/test_group.txt'  # テストグループファイルのパス
+# fasta_file = '/home/aca10223gf/workplace/data/OMA_database/prokaryotes.cdna.fa'  # 配列が格納されたFASTAファイルのパス
+# train_output_dir = '/home/aca10223gf/workplace/data/OMA_database/full_data/train_fasta'  # トレーニングデータ出力ディレクトリ
+# test_output_dir = '/home/aca10223gf/workplace/data/OMA_database/full_data/test_fasta'  # テストデータ出力ディレクトリ
+
+# メイン処理(tsubame)
+species_list_file = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/prokaryotes_group.txt'  # 菌種リストファイルのパス
+oma_group_file = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/oma-groups.txt' # OMAgroupと配列IDのファイル
+train_groups_file = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/train_group.txt'  # トレーニンググループファイルのパス
+test_groups_file = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/test_group.txt'  # テストグループファイルのパス
+fasta_file = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/prokaryotes.cdna.fa'  # 配列が格納されたFASTAファイルのパス
+train_output_dir = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/full_data/train_fasta'  # トレーニングデータ出力ディレクトリ
+test_output_dir = '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/full_data/test_fasta'  # テストデータ出力ディレクトリ
 
 # トレーニング用とテスト用のグループデータを処理
 process_groups(train_groups_file, test_groups_file, oma_group_file, fasta_file, species_list_file, train_output_dir, test_output_dir)

@@ -4,10 +4,10 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
-from torchtext.data.metrics import bleu_score
+#from torchtext.data.metrics import bleu_score
 import torch.nn.functional as F
 
-from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, gumbel_softmax, soft_align, count_parameters, CG_ratio
+from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, count_parameters, CG_ratio
 from mcts import mcts
 from model import CodonTransformer
 from read import OrthologDataset
@@ -35,7 +35,7 @@ else:
 
 # 結果出力フォルダー
 import datetime
-result_folder = os.path.join("/home/aca10223gf/workplace/job_results/", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+result_folder = os.path.join("../job_results/", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 os.makedirs(result_folder, exist_ok=True)
 
 # パラメータ出力
@@ -45,11 +45,10 @@ with open(os.path.join(result_folder, "args.json"), "w") as f:
 # 標準出力先の変更
 sys.stdout = open(os.path.join(result_folder, "output.txt"), "w")
 
-
 # OMA_speciesファイル
 OMA_species = args.OMA_species
 # OrthologDataset オブジェクトを作成する
-dataset = OrthologDataset(OMA_species)
+dataset = OrthologDataset(OMA_species,"./vocab_OMA.json")
 # テスト対象のオルソログ関係ファイルのリスト
 ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
 test_dataset = dataset.load_data(ortholog_files_test, False)
@@ -127,7 +126,6 @@ if args.train:
 
             total_loss = 0
             num_batches = 0
-            total_soft_align_loss = 0
 
             for batch in train_loader:
                 tgt = batch[1].to(device)                
@@ -217,17 +215,18 @@ with torch.no_grad():
     # ギャップを取り除く
     predicted_sequences = [[item for item in row if item != dataset.vocab['---']] for row in predicted_sequences]
     
-    if args.train:
-        if args.horovod:            
-            source_sequences, target_sequences , predicted_sequences = allreduce(source_sequences, target_sequences, predicted_sequences, dataset.vocab)
-            # if hvd.rank() == 0:  # ここでランク0のノードのみが実行
-        plot_obj = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
-        plot_obj.savefig(os.path.join(result_folder, "align.png"))
+    #if args.train:
+    if args.horovod:            
+        source_sequences, target_sequences , predicted_sequences = allreduce(source_sequences, target_sequences, predicted_sequences, dataset.vocab)
+        # if hvd.rank() == 0:  # ここでランク0のノードのみが実行
+    plot_obj, score_ratio = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
+    plot_obj.savefig(os.path.join(result_folder, "align.png"))
 
     predicted_sequences = [[dataset.vocab.index_to_token[codon] for codon in sequence] for sequence in predicted_sequences]
     predicted_sequences_all = [''.join(sequence) for sequence in predicted_sequences]
     print("GC ratio " +  str(CG_ratio(predicted_sequences_all)))
     print('\n'.join(predicted_sequences_all))
+    print(score_ratio)
 
     if args.mcts:
         mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, args.memory_mask, result_folder)

@@ -22,6 +22,8 @@ class CodonTransformer(nn.Module):
         self.act = nn.ReLU()
 
 
+        #if torch._C._jit_get_te_enabled():
+        #    torch._C._jit_set_texpr_fuser_enabled(True)
 
         # self.transformer_model = nn.Transformer(d_model=d_model, nhead=nhead,num_encoder_layers=num_layers, num_decoder_layers=num_layers, dim_feedforward=dim_feedforward, dropout=dropout, norm_first=True , batch_first=True)
 

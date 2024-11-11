@@ -11,4 +11,6 @@ def extract_first_five_unique_from_fasta(input_file, output_file):
 # 実行例
 # 'input.fasta'は読み込むFASTAファイルの名前
 # 'output.txt'は出力ファイルの名前
-extract_first_five_unique_from_fasta('/home/aca10223gf/workplace/data/OMA_database/prokaryotes.cdna.fa', '/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt')
+# extract_first_five_unique_from_fasta('/home/aca10223gf/workplace/data/OMA_database/prokaryotes.cdna.fa', '/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt')
+extract_first_five_unique_from_fasta('/gs/bs/tgh-24IAU/akiyama/data/OMA_database/prokaryotes.cdna.fa', '/gs/bs/tgh-24IAU/akiyama/data/OMA_database/prokaryotes_group.txt')
+

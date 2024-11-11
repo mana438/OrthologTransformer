@@ -174,7 +174,7 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, memory_mask, result_f
 
 
 def mcts(model, test_loader, vocab, device, edition_fasta, predicted_sequences, memory_mask, result_folder):
-    shutil.copy("/home/aca10223gf/workplace/mtgenome/mcts.py", os.path.join(result_folder, "mcts.py"))
+    shutil.copy("./mcts.py", os.path.join(result_folder, "mcts.py"))
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)

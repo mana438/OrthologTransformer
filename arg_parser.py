@@ -4,10 +4,10 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_input', type=str)
-    # parser.add_argument('--model_output', type=str, default="/home/aca10223gf/workplace/job_results/weight/model_weights.pth")
+    # parser.add_argument('--model_output', type=str, default="./model_weights.pth")
     parser.add_argument('--ortholog_files_test', type=str)
     parser.add_argument('--ortholog_files_train', type=str)
-    parser.add_argument('--OMA_species', type=str, default="/home/aca10223gf/workplace/data/OMA_database/prokaryotes_group.txt")
+    parser.add_argument('--OMA_species', type=str, default="../data/OMA_database/prokaryotes_group.txt")
     parser.add_argument('--edition_fasta', action='store_true')
     
 

@@ -4,6 +4,9 @@ import torch.nn.functional as F
 import torch.nn as nn
 from Bio import pairwise2
 from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio import SeqIO
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import matplotlib.pyplot as plt
 import os
@@ -52,7 +55,9 @@ class alignment:
 
             end_idx = min(end_idx_2, end_idx_0)
 
-            extracted_sequence = row[start_idx:end_idx].tolist()
+            #extracted_sequence = row[start_idx:end_idx].tolist()
+            # **抽出された配列から0、1、2を取り除く**
+            extracted_sequence = [num for num in row[start_idx:end_idx].tolist() if num not in [0, 1, 2]]
             result.append(extracted_sequence)
         return result
 
@@ -69,12 +74,57 @@ class alignment:
         seq2 = ''.join([self.num_to_char[num] for num in seq2])  
           
         alignments = pairwise2.align.globalxx(Seq(seq1), Seq(seq2))
+
+        if not alignments:
+            print(f"Warning: No alignments found for sequences: {seq1}, {seq2}")
+            return seq1, seq2, 0
+
         aligned_seq1, aligned_seq2, score, _, _ = alignments[0]
         aligned_seq1 = ''.join([self.vocab.index_to_token[self.char_to_num[char]] if char != '-' else "---" for char in Seq(aligned_seq1) ])
         aligned_seq2 = ''.join([self.vocab.index_to_token[self.char_to_num[char]] if char != '-' else "---" for char in Seq(aligned_seq2)])
         
 
         return Seq(aligned_seq1), Seq(aligned_seq2), score
+
+    # align structure
+    def align_structures(self, seq_pair):
+        seq1, seq2 = seq_pair
+        seq1 = ''.join([self.vocab.index_to_token[num] for num in seq1])
+        seq2 = ''.join([self.vocab.index_to_token[num] for num in seq2])  
+        
+    def predict_structure(self, dna_sequence):
+
+        # Biopythonを用いてDNA配列をアミノ酸配列に変換
+        dna_seq = Seq(dna_sequence)
+        amino_acid_seq = dna_seq.translate()
+
+
+        # アミノ酸配列をFASTA形式で保存
+        fasta_file_path = '../job_result/query.fasta'
+        record = SeqRecord(amino_acid_seq, id="query_sequence", description="Translated sequence")
+        os.makedirs(os.path.dirname(fasta_file_path), exist_ok=True)  # ディレクトリが存在しない場合に作成
+        with open(fasta_file_path, 'w') as fasta_file:
+            SeqIO.write(record, fasta_file, "fasta")
+
+        # 実行スクリプトのパス
+        alphafold_script_path = '../alphafold/run_alphafold.sh'
+        # シェルコマンドをディレクトリ移動せずに実行
+        result = subprocess.run([
+            alphafold_script_path,
+            '-a', '0,1,2,3',
+            '-d', os.getenv('ALPHAFOLD_DATA_DIR'),
+            '-o', '../dummy_test/',
+            '-m', 'model_1',
+            '-f', fasta_file_path,
+            '-t', '2020-05-14'
+        ], capture_output=True, text=True)
+
+        # 実行結果を表示
+        print("Standard Output:\n", result.stdout)
+        print("Standard Error:\n", result.stderr)
+
+
+
 
     def chunks(self, lst, chunk_size):
         """リストを指定されたチャンクサイズで分割するジェネレータ"""
@@ -84,6 +134,7 @@ class alignment:
     def plot_alignment_scores(self, src_seqs, tgt_seqs, pred_seqs, xlabel="Alignment score of source and target codons", ylabel="Alignment score of target and predicted codons"):
         src_tgt_scores = []
         tgt_pred_scores = []
+        score_ratio = []
         # リストの各要素から10個ずつ取り出してタプルにし、それらのタプルのリストを作成
         batch_num = 30
         src_seqs = list(self.chunks(src_seqs, batch_num))
@@ -107,6 +158,9 @@ class alignment:
             src_tgt_score_corrected = [score / len(tgt) for score, tgt in zip(src_tgt_score, tgt_seq)]
             tgt_pred_score_corrected = [score / len(tgt) for score, tgt in zip(tgt_pred_score, tgt_seq)]
             
+
+            score_ratio += [pred_score / src_score if src_score != 0 else 0 for pred_score, src_score in zip(tgt_pred_score_corrected, src_tgt_score_corrected)]
+
             src_tgt_scores += src_tgt_score_corrected
             tgt_pred_scores += tgt_pred_score_corrected
         
@@ -143,15 +197,7 @@ class alignment:
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.grid(True)
-        # filename = "/home/aca10223gf/workplace/job_results/align.png"
-        # counter = 1
-        # while os.path.exists(filename):
-        #     # ファイル名の拡張子の前にカウンタを追加する
-        #     filename = f"/home/aca10223gf/workplace/job_results/align_png/align_{counter}.png"
-        #     counter += 1
-        # # 画像をファイルに保存する
-        # plt.savefig(filename)
-        return plt
+        return plt, score_ratio
     
     def print_alignment(self, aligned_seq1, aligned_seq2, score):
         # アラインメントされたシーケンスを表示
@@ -203,11 +249,6 @@ def load_params(json_file):
         params = json.load(f)
     return params
 
-# def replace_elements_with_probability(lst, value, probability):
-#     for i, element in enumerate(lst):
-#         if random.random() < probability:
-#             lst[i] = value
-#     return lst
 
 def check_condition(args, hvd):
     if args.horovod:
@@ -236,88 +277,9 @@ def allreduce(source_sequences, target_sequences, predicted_sequences, vocab):
     all_predicted_sequences = [seq[:seq.tolist().index(vocab['<pad>'])].tolist() if vocab['<pad>'] in seq else seq.tolist() for seq in all_predicted_sequences]
     return  all_source_sequences, all_target_sequences , all_predicted_sequences
 
-# ガンベルノイズを生成する関数
-# shape: 出力テンソルの形状
-# device: 使用するデバイス（CPUまたはGPU）
-# eps: 数値安定性のための微小値
-def gumbel_noise(shape, device, eps=1e-20):
-    U = torch.rand(shape).to(device)  # [0, 1)の一様分布からサンプリング
-    return -torch.log(-torch.log(U + eps) + eps)  # ガンベル分布に従うノイズ
-
-# ガンベルソフトマックス関数
-# logits: 元の確率の対数値（ロジット）
-# tau: 温度パラメータ（低い値で確定的な出力、高い値で確率的な出力）
-# hard: 出力をハードにするかどうか（つまり、one-hotにするかどうか）
-def gumbel_softmax(logits, tau=1.0, hard=False):
-    shape = logits.size()  # 元のテンソルの形状
-    device = logits.device  # 使用するデバイス
-
-    gumbel = gumbel_noise(shape, device)  # ガンベルノイズを生成
-    y = logits + gumbel  # ノイズをロジットに加える
-
-    y_soft = torch.nn.functional.softmax(y / tau, dim=-1)  # ソフトマックスを適用
-
-    # hardがTrueの場合は、出力をほぼone-hotにする
-    if hard:
-        _, max_idx = y_soft.max(dim=-1)
-        y_hard = torch.zeros_like(y_soft).scatter_(-1, max_idx.unsqueeze(-1), 1.0)
-        y = y_hard - y_soft.detach() + y_soft
-    else:
-        y = y_soft 
-    return y  # 結果を返す
-
-def soft_align(encoder_out, decoder_out):
-    # Step 1: Expand dimensions
-    # shape -> (batch_size, encoder_seq_len, 1, hidden_size)
-    # shape -> (batch_size, 1, decoder_seq_len, hidden_size)
-    expanded_encoder_out = encoder_out.unsqueeze(2)
-    expanded_decoder_out = decoder_out.unsqueeze(1)
-
-    # Step 2: Repeat Tensors
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len, hidden_size)
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len, hidden_size)
-    repeated_encoder_out = expanded_encoder_out.repeat(1, 1, decoder_out.size()[1], 1)
-    repeated_decoder_out = expanded_decoder_out.repeat(1, encoder_out.size()[1], 1, 1)
-
-    # Step 3: Compute cosine similarity
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len)
-    cosine_similarity = nn.CosineSimilarity(dim=3, eps=1e-6)
-    match_score = cosine_similarity(repeated_encoder_out, repeated_decoder_out)
-    s = match_score
-    # Step 4: Soft alignment
-    # Calculate softmax along the encoder sequence (axis=1)
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len)
-    a = F.softmax(s, dim=1)
-
-    # Calculate softmax along the decoder sequence (axis=2)
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len)
-    b = F.softmax(s, dim=2)
-
-    # Combine the alignments
-    # shape -> (batch_size, encoder_seq_len, decoder_seq_len)
-    c = a + b - a * b
-
-    # Calculate the final aligned score (optional)
-    # shape -> (batch_size,)
-    aligned_score = (c * s).sum(dim=(1,2)) / c.sum(dim=(1,2))
-    shifted_score = (aligned_score + 1)/2
-    distance = (1 / (shifted_score + 1e-6)) -1
-    return distance
-
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters())
 
-def randomize_nested_list(nested_list, ratio):
-
-    randomized_list = copy.deepcopy(nested_list)
-    print(randomized_list)
-    for i in range(len(randomized_list)):
-        ratio_mod = ratio + (random.random()-0.5)/10
-        for j in range(len(randomized_list[i])):
-            if random.random() < ratio_mod:
-                randomized_list[i][j] = random.randint(5, 6)
-                
-    return randomized_list
 
 def CG_ratio(sequences):
     gc_contents = [ (seq.count('G') + seq.count('C')) / len(seq) for seq in sequences]
