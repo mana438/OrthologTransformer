@@ -8,10 +8,12 @@ def get_args():
     parser.add_argument('--ortholog_files_test', type=str)
     parser.add_argument('--ortholog_files_train', type=str)
     parser.add_argument('--OMA_species', type=str, default="../data/OMA_database/prokaryotes_group.txt")
+    parser.add_argument('--pickle_path', type=str)
     parser.add_argument('--edition_fasta', action='store_true')
     
 
     parser.add_argument('--train', action='store_true')
+    parser.add_argument('--calm', action='store_true')
     parser.add_argument('--reverse', type=bool, default=False)
 
     # hvd

@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
+#from torchtext.data.metrics import bleu_score
 import torch.nn.functional as F
 from torch.cuda.amp import GradScaler, autocast
 
@@ -35,9 +36,6 @@ from calm.alphabet import Alphabet  # アルファベット定義
 from calm.model import ProteinBertModel
 from calm.pretrained import ARGS  # 事前に定義されたARGSを使用
 
-import schedulefree
-
-
 args = get_args()
 if args.horovod:
     import horovod.torch as hvd
@@ -58,7 +56,7 @@ with open(os.path.join(result_folder, "args.json"), "w") as f:
     json.dump(vars(args), f, indent=4)
 
 # 標準出力先の変更
-sys.stdout = open(os.path.join(result_folder, "output.txt"), "w")
+# sys.stdout = open(os.path.join(result_folder, "output.txt"), "w")
 
 # OMA_speciesファイル
 OMA_species = args.OMA_species
@@ -69,20 +67,32 @@ ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
 test_dataset = dataset.load_data(ortholog_files_test, False, args.calm)
 
 if args.train:
-    start_time = time.time() 
-    # もし pickle ファイルが存在すれば、そこから読み込む
-    if os.path.exists(args.pickle_path):
-        with open(args.pickle_path, "rb") as f:
-            train_dataset = pickle.load(f)
-    else:
-        # 学習のみのオルソログ関係ファイルのリスト
-        ortholog_files_train = glob.glob(args.ortholog_files_train.replace("'", ""))
-        print("pre: ",len(ortholog_files_train), flush=True)
-        train_dataset = dataset.load_data(ortholog_files_train, args.reverse, args.calm)
+    # 学習のみのオルソログ関係ファイルのリスト
+    ortholog_files_train = glob.glob(args.ortholog_files_train.replace("'", ""))
     
-    print(f"data load Time: {time.time() - start_time:.2f} seconds", flush=True)
-    print("train: ", len(train_dataset), flush=True)
+
+    #ortholog_files_train = ortholog_files_train * 100
+
+    print(len(ortholog_files_train))
+    start = time.time()  # 時間計測開始
+#    train_dataset = dataset.load_data(ortholog_files_train, args.reverse, args.calm)
+    print(f"Data loading took 1{time.time() - start:.2f} seconds.", flush=True)
+
+    # ファイルを指定した数で順序を保ったまま分割
+    def split_files(files, n_groups):
+        chunk_size = (len(files) + n_groups - 1) // n_groups  # 切り上げで計算
+        return [files[i * chunk_size:(i + 1) * chunk_size] for i in range(n_groups)]
+
+    start = time.time()
+    max_workers = os.cpu_count()
+    file_chunks = split_files(ortholog_files_train, max_workers)
     
+    # 並列処理で各チャンクをロード
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        train_dataset = sum(executor.map(lambda chunk: dataset.load_data(chunk, args.reverse, args.calm), file_chunks), [])
+
+    print(f"Data loading took {time.time() - start:.2f} seconds.", flush=True)
+
 #######
 
 print("test: ", len(test_dataset), flush=True)
@@ -92,12 +102,13 @@ if args.horovod:
     # horovod用のdataloader
     if args.train:
         train_sampler = distributed.DistributedSampler(train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, shuffle=False, collate_fn=custom_collate_fn)
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, sampler=train_sampler, collate_fn=custom_collate_fn)
     # Test sampler and loader
     test_sampler = distributed.DistributedSampler(test_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, sampler=test_sampler, shuffle=False, collate_fn=custom_collate_fn)
     torch.cuda.set_device(hvd.local_rank())
     device = torch.device("cuda", hvd.local_rank())
+    # print(f"Process {hvd.rank()}: Using GPU {hvd.local_rank()} - {torch.cuda.get_device_name(hvd.local_rank())} ({torch.cuda.get_device_properties(hvd.local_rank()).total_memory / 1e9:.2f} GB)", flush=True)
     print(f"Process {hvd.rank()}: Local rank {hvd.local_rank()}", flush=True)
 
 else:
@@ -144,32 +155,17 @@ if args.calm:
     with open(weights_file, 'rb') as handle:
         state_dict = pickle.load(handle)
         calm_model.load_state_dict(state_dict)
-        
-    # calm_model = torch.compile(calm_model)
-    
     # calm_modelのパラメータをフリーズ
     for param in calm_model.parameters():
         param.requires_grad = False
-        
     if args.horovod:
         hvd.broadcast_parameters(calm_model.state_dict(), root_rank=0)
-
-# torch.compile()で最適化
-# model = torch.compile(model, backend="aot_eager")
-model = torch.compile(model)
 
 
 # 損失関数と最適化アルゴリズム
 # criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab['<pad>'])
 criterion = nn.CrossEntropyLoss()
-
-# optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
-# optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
-# optimizer = optim.NAdam(model.parameters(), lr=args.learning_rate)
-# optimizer = optim.SparseAdam(model.parameters(), lr=args.learning_rate)
-optimizer = schedulefree.AdamWScheduleFree(model.parameters(), lr=args.learning_rate)
-optimizer.train() #schedulefree用
-
+optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
 
 if args.horovod:
@@ -186,12 +182,7 @@ if args.train:
         start_time = time.time()  # エポック開始時の時間を記録
         try:
             print(epoch, " epoch start", flush=True)
-            # 各GPUが扱うデータ数を表示
-            if hasattr(train_loader.sampler, 'num_samples') and args.horovod:
-                print(f"Process {hvd.rank()} is handling {train_loader.sampler.num_samples} samples.", flush=True)
-
             model.train()
-            
             # トレーニングのループの外で定義します
             train_correct_predictions = 0
             train_total_predictions = 0
@@ -199,17 +190,14 @@ if args.train:
             total_loss = 0
             num_batches = 0
 
-            
-            for batch_idx, batch in enumerate(train_loader):
-                batch_start_time = time.time()  # バッチ処理開始時間
-                
+            for batch in train_loader:
                 tgt = batch[1].to(device)                
                 src = batch[2].to(device)
 
                 dec_ipt = tgt[:, :-1]
                 dec_tgt = tgt[:, 1:] #右に1つずらす
-
-                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                
+                with autocast():  # FP16演算を有効化
                     if args.calm:
                         calm_output = calm_model(batch[3].to(device), repr_layers=[12])["representations"][12].detach()
                     else:
@@ -249,10 +237,6 @@ if args.train:
                     match_count, all_count = count_nonzero_matches(tgt[:, 1:], output_codon)
                     train_correct_predictions += match_count
                     train_total_predictions += all_count
-                    
-                batch_time = time.time() - batch_start_time
-                if batch_idx < 30:  # 最初の20バッチの間のみ記録
-                    print(f"Batch {batch_idx + 1}: {batch_time:.4f} seconds", flush=True)
 
             if (epoch + 1) == args.num_epochs:
                 # 各エポックの最後に、トレーニングの分類予測精度を表示します。
@@ -265,7 +249,7 @@ if args.train:
             avg_loss = total_loss / num_batches
             print(f"Epoch {epoch + 1}/{args.num_epochs}, Loss: {avg_loss:.4f}", flush=True)
             # モデルの state_dict を保存
-            # torch.save(model.state_dict(), os.path.join(result_folder, os.path.basename("model_weights.pth")))
+            torch.save(model.state_dict(), os.path.join(result_folder, os.path.basename("model_weights.pth")))
             
         except Exception as e:
             tb = traceback.format_exc()

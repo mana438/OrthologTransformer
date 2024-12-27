@@ -9,6 +9,9 @@ from Bio import SeqIO
 import time
 import json
 
+from calm.sequence import CodonSequence  # CodonSequenceクラス
+from calm.alphabet import Alphabet  # アルファベット定義
+
 class Vocab:
     def __init__(self, tokens, json_path):
         self.json_path = json_path
@@ -77,9 +80,13 @@ class OrthologDataset(Dataset):
         self.vocab = Vocab(tokens, json_path)
         self.vocab_target = spc + codons + gap
 
+        #calmの辞書
+        alphabet = Alphabet.from_architecture("CodonModel")
+        self.token_dict = alphabet.tok_to_idx  # トークンとインデックスの対応辞書
 
-    def load_data(self, ortholog_files, reverse):
+    def load_data(self, ortholog_files, reverse, calm):
         dataset = []
+        
         # オルソログ関係ファイルを1つずつ読み込む
         for ortholog_file in ortholog_files:
             # 正規表現を用いてグループ番号と菌種名を抽出
@@ -101,9 +108,18 @@ class OrthologDataset(Dataset):
             if self.is_valid_pair(sequences[0], sequences[1]) or group_number == "9999999":
                 seq1_codons = self.convert_to_codons(sequences[0], species_name_1)                            
                 seq2_codons = self.convert_to_codons(sequences[1], species_name_2)                            
-                dataset.append((group_number, seq1_codons, seq2_codons))
-                if reverse:
-                    dataset.append((group_number, seq2_codons, seq1_codons))
+                 # 基本のデータを追加
+                if calm:
+                    calm_feature = self.convert_to_codons_calm(sequences[1])
+                    dataset.append((group_number, seq1_codons, seq2_codons, calm_feature))
+                    if reverse:
+                        calm_feature = self.convert_to_codons_calm(sequences[0])
+                        dataset.append((group_number, seq2_codons, seq1_codons, calm_feature))
+                else:
+                    dataset.append((group_number, seq1_codons, seq2_codons))
+                    if reverse:
+                        dataset.append((group_number, seq2_codons, seq1_codons))
+        
         return dataset
 
 
@@ -112,6 +128,11 @@ class OrthologDataset(Dataset):
         seq_species_index = self.vocab[seq_species]
         codon_seq = [seq_species_index] +  [self.vocab['<bos>']] + [self.vocab[codon] for codon in codons] + [self.vocab['<eos>']]
         return codon_seq
+
+    def convert_to_codons_calm(self, seq):        
+        rna_seq = seq.replace("T", "U")
+        token = [0] + [self.token_dict[codon] for codon in [rna_seq[i:i+3] for i in range(0, len(rna_seq), 3)] if codon in self.token_dict] + [2]
+        return token
 
 
     # 配列ペアが有効であるかどうかを判断する

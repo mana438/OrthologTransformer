@@ -213,17 +213,30 @@ class alignment:
 
 
 def custom_collate_fn(batch):
-    ortholog_groups, targets, inputs = [], [], []
+    ortholog_groups, targets, inputs, calm_inputs = [], [], [], []
 
-    for ortholog_group, tgt, inp in batch:
+    for item in batch:
+        # バッチの要素を分解
+        ortholog_group, tgt, inp = item[:3]  # 最初の3つを確実に取得
         ortholog_groups.append(ortholog_group)
         targets.append(torch.tensor(tgt))
-        
         inputs.append(torch.tensor(inp))
 
+        # 4つ目の要素が存在する場合、それを格納
+        if len(item) > 3:
+            calm_inputs.append(torch.tensor(item[3]))
+        else:
+            # 4つ目が存在しない場合はパディング用のテンソルを格納
+            calm_inputs.append(torch.tensor([1]))
+
+    # パディング処理
     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
-    return ortholog_groups, targets_padded, inputs_padded
+    calm_inputs_padded = pad_sequence(calm_inputs, batch_first=True, padding_value=1)
+    
+    # return ortholog_groups, targets, inputs, calm_inputs
+    return ortholog_groups, targets_padded, inputs_padded, calm_inputs_padded
+
 
 def count_nonzero_matches(tensor1, tensor2):
     assert tensor1.shape == tensor2.shape, "The tensors are not the same shape"

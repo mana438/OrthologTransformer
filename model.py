@@ -11,14 +11,14 @@ class CodonTransformer(nn.Module):
         self.positional_encoding_e = nn.Embedding(1000, d_model)
         self.positional_encoding_d = nn.Embedding(1000, d_model)
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True )
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True)
         self.encoder = nn.TransformerEncoder(self.encoder_layer, num_encoder_layers)
-        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True )
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=dim_feedforward,dropout=dropout, batch_first=True, norm_first=True)
         self.decoder = nn.TransformerDecoder(self.decoder_layer, num_decoder_layers)
         
-        self.fc_out_1 = nn.Linear(d_model, 512)
-        self.fc_out_2 = nn.Linear(512, 256)
-        self.fc_out_3 = nn.Linear(256, vocab_size_target)
+        self.fc_out_1 = nn.Linear(d_model, d_model)
+        self.fc_out_2 = nn.Linear(d_model, int(d_model/2))
+        self.fc_out_3 = nn.Linear(int(d_model/2), vocab_size_target)
         self.act = nn.ReLU()
 
 
@@ -29,31 +29,27 @@ class CodonTransformer(nn.Module):
 
         self.d_model = d_model
 
-    def forward(self, tgt, src, one_to_one_mask):        
-        src = self.embedding_e(src)
-        src = src + self.positional_encoding_e(torch.arange(src.size(dim=1)).unsqueeze(0).repeat(src.size(0), 1).to(src.device))
+    def forward(self, tgt, src, memory_calm=None):        
+        if memory_calm  is not None:
+            embedded_first = self.embedding_e(src[:, 0]).unsqueeze(1)
+            # print(f"embedded_first.shape: {embedded_first.shape}")
+            # print(f"memory_calm.shape: {memory_calm.shape}")
+            memory = torch.cat([embedded_first, memory_calm], dim=1)
+            # print(f"memory.shape after concatenation: {memory.shape}")
+            memory = self.encoder(memory)
+            # print(f"memory.shape after encoder: {memory.shape}")
+
+            
+            
+        else:
+            src = self.embedding_e(src)
+            src = src + self.positional_encoding_e(torch.arange(src.size(dim=1)).unsqueeze(0).repeat(src.size(0), 1).to(src.device))
+            memory = self.encoder(src)
 
         tgt = self.embedding_d(tgt)
         tgt = tgt + self.positional_encoding_d(torch.arange(tgt.size(dim=1)).unsqueeze(0).repeat(tgt.size(0), 1).to(tgt.device))
         tgt_mask = torch.nn.Transformer().generate_square_subsequent_mask(tgt.size(1)).to(src.device)
-
-        # output = self.transformer_model(src, tgt, tgt_mask=tgt_mask) 
-        memory = self.encoder(src)
-
-        if one_to_one_mask:
-            # memory_maskを全てTrueで初期化
-            memory_mask = torch.ones((tgt.size(1), memory.size(1)), dtype=torch.bool)
-            # 対角要素に対するマスクをFalseに設定するためのインデックスを作成
-            diagonal_indices = torch.arange(0, min(tgt.size(1), memory.size(1)))
-            # 対角要素をFalseに設定
-            memory_mask[diagonal_indices, diagonal_indices] = False
-            # メモリの一番最初の位置を常に参照するために、最初の列をFalseに設定
-            memory_mask[:, 0] = False
-            memory_mask = memory_mask.to(src.device)
-            output = self.decoder(tgt, memory, memory_mask=memory_mask ,tgt_mask=tgt_mask)
-        else:
-            output = self.decoder(tgt, memory, tgt_mask=tgt_mask)
-            
+        output = self.decoder(tgt, memory, tgt_mask=tgt_mask)   
         output_codon = self.fc_out_3(self.act(self.fc_out_2(self.act(self.fc_out_1(output)))))
         
         return output_codon
