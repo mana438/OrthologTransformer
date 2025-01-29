@@ -5,10 +5,12 @@ import pickle
 
 
 OMA_species="/home/4/ux03574/workplace/data/OMA_database/prokaryotes_group.txt"
-ortholog_files_train="/home/4/ux03574/workplace/data/OMA_database/BS_IS/train_fasta/*"
-pickle_path="/home/4/ux03574/workplace/data/OMA_database/BS_IS/train_dataset.pkl"
+# ortholog_files_train="/home/4/ux03574/workplace/data/OMA_database/BS_IS/train_fasta/*"
+ortholog_files_train="/gs/bs/tgh-24IAU/akiyama/data/OMA_database/full_data/train_fasta/*"
+# pickle_path="/home/4/ux03574/workplace/data/OMA_database/BS_IS/train_dataset.pkl"
+pickle_path="/gs/bs/tgh-24IAU/akiyama/data/OMA_database/full_data/train_dataset.pkl"
 
-reverse=False
+reverse=True
 calm=True
 
 # OrthologDataset オブジェクトを作成する

@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from Bio import pairwise2
+from Bio.Align import substitution_matrices
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
@@ -91,6 +92,25 @@ class alignment:
         seq1, seq2 = seq_pair
         seq1 = ''.join([self.vocab.index_to_token[num] for num in seq1])
         seq2 = ''.join([self.vocab.index_to_token[num] for num in seq2])  
+        
+    def align_sequences_aa(self, pair):
+        s1, s2 = pair
+        # BLOSUM62 行列を読み込み
+        blosum62 = substitution_matrices.load("BLOSUM62")
+        
+        # gap_open, gap_extend は適宜調整 (例: -10, -0.5)
+        gap_open = -10
+        gap_extend = -0.5
+    
+        # globalds: global alignment with a scoring dictionary
+        alignments = pairwise2.align.globalds(s1, s2, blosum62, gap_open, gap_extend)
+    
+        # 最適アラインメントを一つ取得（複数候補が返る場合あり）
+        best_alignment = alignments[0]
+        aligned_s1 = best_alignment.seqA
+        aligned_s2 = best_alignment.seqB
+        score = best_alignment.score
+        return aligned_s1, aligned_s2, score
         
     def predict_structure(self, dna_sequence):
 
@@ -198,6 +218,74 @@ class alignment:
         plt.ylabel(ylabel)
         plt.grid(True)
         return plt, score_ratio
+        
+        
+    def plot_alignment_scores_aa(self, src_seqs, tgt_seqs, pred_seqs, 
+                                xlabel="Alignment score of source and target AAs", 
+                                ylabel="Alignment score of target and predicted AAs"):
+        src_tgt_scores = []
+        tgt_pred_scores = []
+        score_ratio = []
+
+        # リストの分割単位
+        batch_num = 30
+        src_seqs = list(self.chunks(src_seqs, batch_num))
+        tgt_seqs = list(self.chunks(tgt_seqs, batch_num))
+        pred_seqs = list(self.chunks(pred_seqs, batch_num))
+
+        for src_seq, tgt_seq, pred_seq in zip(src_seqs, tgt_seqs, pred_seqs):
+            # source_sequences, target_sequencesをペアワイズアラインメント
+            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+                results_src_tgt = list(executor.map(self.align_sequences_aa, zip(src_seq, tgt_seq)))
+            aligned_src, aligned_tgt, src_tgt_score = zip(*results_src_tgt)
+
+            # target_sequences, predicted_sequencesをペアワイズアラインメント
+            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+                results_tgt_pred = list(executor.map(self.align_sequences_aa, zip(tgt_seq, pred_seq)))
+            aligned_tgt, aligned_pred, tgt_pred_score = zip(*results_tgt_pred)
+
+            # アラインメントスコアを配列長(ここではtgt_seqの長さ)で正規化
+            src_tgt_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
+                                       for score, tgt in zip(src_tgt_score, tgt_seq)]
+            tgt_pred_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
+                                        for score, tgt in zip(tgt_pred_score, tgt_seq)]
+
+            score_ratio += [pred_score / src_score if src_score != 0 else 0 
+                            for pred_score, src_score in zip(tgt_pred_score_corrected, src_tgt_score_corrected)]
+
+            src_tgt_scores += src_tgt_score_corrected
+            tgt_pred_scores += tgt_pred_score_corrected
+        
+        plt.figure()
+        # 散布図をプロット
+        plt.scatter(src_tgt_scores, tgt_pred_scores)
+
+        src_tgt_mean = np.mean(src_tgt_scores)
+        tgt_pred_mean = np.mean(tgt_pred_scores)
+
+        ax = plt.gca()  # 現在のAxesオブジェクトを取得
+
+        # 右下にsrc-tgt_scoresの平均値を表示
+        plt.text(0.95, 0.05, f'src-tgt Ave: {src_tgt_mean:.3f}', 
+                 horizontalalignment='right', verticalalignment='bottom',
+                 transform=ax.transAxes, fontsize=12)
+
+        # 左上にtgt-pred_scoresの平均値を表示
+        plt.text(0.05, 0.95, f'tgt-pred Ave: {tgt_pred_mean:.3f}', 
+                 horizontalalignment='left', verticalalignment='top',
+                 transform=ax.transAxes, fontsize=12)
+        
+        min_value = min(min(src_tgt_scores), min(tgt_pred_scores))
+        max_value = max(max(src_tgt_scores), max(tgt_pred_scores))
+        
+        # x=y の直線をプロット
+        plt.plot([min_value, max_value], [min_value, max_value], 'r--')
+
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.grid(True)
+        return plt, score_ratio
+
     
     def print_alignment(self, aligned_seq1, aligned_seq2, score):
         # アラインメントされたシーケンスを表示
@@ -251,7 +339,7 @@ def count_nonzero_matches(tensor1, tensor2):
     nonzero_match_count = nonzero_matches.sum().item()
 
     # テンソル1とテンソル2の非ゼロ要素ペアの数を計算
-    nonzero_element_pairs = (tensor1 != 0) | (tensor2 != 0)
+    nonzero_element_pairs = (tensor1 != 0)
     nonzero_element_pair_count = nonzero_element_pairs.sum().item()
 
     return nonzero_match_count, nonzero_element_pair_count
@@ -297,3 +385,20 @@ def count_parameters(model):
 def CG_ratio(sequences):
     gc_contents = [ (seq.count('G') + seq.count('C')) / len(seq) for seq in sequences]
     return sum(gc_contents) / len(gc_contents)
+
+
+def save_with_unique_filename(result_folder, base_name, plot_obj):
+    """
+    ユニークなファイルパスを生成してプロットを保存する
+    :param result_folder: 保存先のフォルダ
+    :param base_name: 基本のファイル名（例: "align.png"）
+    :param plot_obj: 保存対象のプロットオブジェクト
+    """
+    output_path = os.path.join(result_folder, base_name)
+    for counter in range(1, 1000):  # 最大999個まで試行
+        if not os.path.exists(output_path):
+            break
+        name, ext = os.path.splitext(base_name)
+        output_path = os.path.join(result_folder, f"{name}_{counter}{ext}")
+    plot_obj.savefig(output_path)
+    print(f"Plot saved to {output_path}")

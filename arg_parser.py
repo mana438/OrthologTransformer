@@ -8,6 +8,7 @@ def get_args():
     parser.add_argument('--ortholog_files_test', type=str)
     parser.add_argument('--ortholog_files_train', type=str)
     parser.add_argument('--OMA_species', type=str, default="../data/OMA_database/prokaryotes_group.txt")
+    parser.add_argument('--result_folder', type=str, default=None, help='Path to result folder')
     parser.add_argument('--pickle_path', type=str)
     parser.add_argument('--edition_fasta', action='store_true')
     
