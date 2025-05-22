@@ -62,7 +62,17 @@ else:
 
 print(f"data load Time: {time.time() - start_time:.2f} seconds", flush=True)
 print("train: ", len(train_dataset), flush=True)
-    
+
+
+# Count unique DNA sequences
+unique_sequences = set()
+for _, seq1_codons, seq2_codons, _ in train_dataset:
+    # Convert codon indices back to sequence representation for uniqueness check
+    seq1 = tuple(seq1_codons[2:-1])  # Skip species index, <bos> and <eos>
+    seq2 = tuple(seq2_codons[2:-1])  # Skip species index, <bos> and <eos>
+    unique_sequences.add(seq1)
+    unique_sequences.add(seq2)
+print(f"Number of unique DNA sequences: {len(unique_sequences)}", flush=True)    
 
 if args.horovod:
     import horovod.torch as hvd

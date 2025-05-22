@@ -109,9 +109,9 @@ def plot_distributions(input_folder, base_file, finetuned_file, output_dir):
     # CAIデータフレーム
     cai_data = {
         'Group': (
-            ['Genomic input'] * len(genomic_input_seqs)
-            + ['Genomic target'] * len(genomic_target_seqs)
-            + ['Base'] * len(base_seqs)
+            ['Source sequence'] * len(genomic_input_seqs)
+            + ['Target sequence'] * len(genomic_target_seqs)
+            + ['Pretrained'] * len(base_seqs)
             + ['Fine-tuned'] * len(finetuned_seqs)
         ),
         'Codon Adaptation Index': (
@@ -126,12 +126,12 @@ def plot_distributions(input_folder, base_file, finetuned_file, output_dir):
     # GCデータフレーム
     gc_data = {
         'Group': (
-            ['Genomic input'] * len(genomic_input_seqs)
-            + ['Genomic target'] * len(genomic_target_seqs)
-            + ['Base'] * len(base_seqs)
+            ['Source sequence'] * len(genomic_input_seqs)
+            + ['Target sequence'] * len(genomic_target_seqs)
+            + ['Pretrained'] * len(base_seqs)
             + ['Fine-tuned'] * len(finetuned_seqs)
         ),
-        'GC ratio': (
+        'GC content': (
             [calculate_gc_content(seq) for seq in genomic_input_seqs]
             + [calculate_gc_content(seq) for seq in genomic_target_seqs]
             + [calculate_gc_content(seq) for seq in base_seqs]
@@ -142,7 +142,7 @@ def plot_distributions(input_folder, base_file, finetuned_file, output_dir):
 
     # ---- ② subplots を使って縦に2つのグラフを配置する ----
     # フォントサイズや描画領域などは好みに合わせて調整
-    plt.rcParams['font.size'] = 30
+    plt.rcParams['font.size'] = 36
     fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12, 16))
 
     # カラーパレットの設定
@@ -162,23 +162,23 @@ def plot_distributions(input_folder, base_file, finetuned_file, output_dir):
     )
     axes[0].set_xlabel('')
     axes[0].tick_params(axis='x', labelbottom=False)  # 上段の目盛りラベルを表示しない
-    axes[0].set_ylabel('Codon Adaptation Index', fontsize=20, labelpad=10)
-    axes[0].tick_params(axis='y', labelsize=20)
+    axes[0].set_ylabel('Codon Adaptation Index', fontsize=30, labelpad=10)
+    axes[0].tick_params(axis='y', labelsize=30)
     
-    # 下段: GC ratio
+    # 下段: GC content
     sns.violinplot(
         data=df_gc,
         x='Group',
-        y='GC ratio',
+        y='GC content',
         hue='Group',
         palette=colors,
         ax=axes[1],
         legend=False
     )
     axes[1].set_xlabel('')
-    axes[1].set_ylabel('GC ratio', fontsize=20, labelpad=10)
-    axes[1].tick_params(axis='x', rotation=45, labelsize=20)
-    axes[1].tick_params(axis='y', labelsize=20)
+    axes[1].set_ylabel('GC content', fontsize=30, labelpad=10)
+    axes[1].tick_params(axis='x', rotation=45, labelsize=30)
+    axes[1].tick_params(axis='y', labelsize=30)
 
     # レイアウト調整
     plt.tight_layout()
@@ -189,26 +189,25 @@ def plot_distributions(input_folder, base_file, finetuned_file, output_dir):
     plt.close()
 
 
-# 例: 変数を指定
-# project_name = "BS_IS"  # ここを任意の文字列に変えて使う
-# project_name = "BS_SE"
-# project_name = "E1_MT"
-# project_name = "E1_PP"
-# project_name = "E1_SJ"
-project_name = "LA_AV"
-# project_name = "LL_TT"
-# project_name = "PF_RL"
-# project_name = "ST_DR"
 
-# パス指定部分で f 文字列を使う
-input_folder = f"/home/4/ux03574/workplace/data/OMA_database/{project_name}/test_fasta"
-output_dir = f"/home/4/ux03574/workplace/job_results/{project_name}"
 
-# plot_distributions 関数呼び出しの部分
-plot_distributions(
-    input_folder,
-    f"/home/4/ux03574/workplace/job_results/{project_name}/predicted_sequences.fasta",
-    f"/home/4/ux03574/workplace/job_results/{project_name}/predicted_sequences_1.fasta",
-    output_dir
-)
+
+
+#追加で菌種ペアがある場合はここに追記
+project_names = [
+    "BS_IS", "BS_SE", "E1_MT", "E1_PP", "E1_SJ",
+    "LA_AV", "LL_TT", "PF_RL", "ST_DR"
+]
+
+for project_name in project_names:
+    input_folder = f"/home/4/ux03574/workplace/data/OMA_database/{project_name}/test_fasta"
+    output_dir   = f"/home/4/ux03574/workplace/job_results/{project_name}"
+    os.makedirs(output_dir, exist_ok=True)      # 出力フォルダが無ければ作成
+
+    plot_distributions(
+        input_folder,
+        f"/home/4/ux03574/workplace/job_results/{project_name}/predicted_sequences.fasta",
+        f"/home/4/ux03574/workplace/job_results/{project_name}/predicted_sequences_1.fasta",
+        output_dir
+    )
 

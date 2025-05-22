@@ -8,7 +8,7 @@ import torch.nn.functional as F
 # from torch.cuda.amp import GradScaler, autocast
 from torch.amp import autocast
 
-from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, count_parameters, CG_ratio, save_with_unique_filename
+from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, count_parameters, CG_ratio, save_with_unique_filename, beam_search
 from mcts import mcts
 from model import CodonTransformer
 from read import OrthologDataset
@@ -121,59 +121,155 @@ source_sequences = []
 target_sequences = []
 predicted_sequences = []
 
+# with torch.no_grad():
+#     for batch in test_loader:
+#         tgt = batch[1].to(device)
+#         src = batch[2].to(device)
+
+#         # dec_ipt = torch.tensor([[dataset.vocab['<bos>']]] * len(src), dtype=torch.long, device=device)
+#         dec_ipt = tgt[:, :2]
+
+#         if args.edition_fasta:
+#             dec_ipt = tgt[:,:-1]
+        
+#         src_key_padding_mask = (src == pad_idx).to(device)
+#         # tgt_key_padding_mask = (dec_ipt == pad_idx).to(torch.bfloat16).to(device)
+
+#         for i in range(700):
+#             with autocast(device_type='cuda', dtype=torch.bfloat16):  # 評価でもbf16演算を有効化
+#             # with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+#                 output_codon_logits = model(dec_ipt, src, calm_model(batch[3].to(device), repr_layers=[12])["representations"][12].detach() if args.calm else None, src_key_padding_mask=src_key_padding_mask)
+#                 output_codon_probs = F.softmax(output_codon_logits, dim=2)
+#                 output_codon = torch.argmax(output_codon_probs, dim=2)
+
+#             # 最も確率の高いcodonトークンを取得
+#             next_item = output_codon[:, -1].unsqueeze(1)
+
+#             # 予測されたcodonトークンをデコーダの入力に追加
+#             dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
+
+#             # 文末を表すトークンが出力されたら終了
+#             # 各行に'<eos>'が含まれているか否かを判定
+#             end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
+#             if end_token_count == len(src):
+#                 break
+
+#         source_sequences += alignment.extract_sequences(src[:,1:])
+#         target_sequences += alignment.extract_sequences(tgt[:,1:])
+#         predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
+        
+
+# 1) ループ開始前に EOS トークンのインデックスを取得しておく
+eos_idx = dataset.vocab['<eos>']
+
 with torch.no_grad():
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)
 
-        # dec_ipt = torch.tensor([[dataset.vocab['<bos>']]] * len(src), dtype=torch.long, device=device)
+        # 既存の dec_ipt 設定はそのまま
         dec_ipt = tgt[:, :2]
-
         if args.edition_fasta:
-            dec_ipt = tgt[:,:-1]
-        
+            dec_ipt = tgt[:, :-1]
+
         src_key_padding_mask = (src == pad_idx).to(device)
-        # tgt_key_padding_mask = (dec_ipt == pad_idx).to(torch.bfloat16).to(device)
 
-        for i in range(700):
-            with autocast(device_type='cuda', dtype=torch.bfloat16):  # 評価でもbf16演算を有効化
-            # with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                output_codon_logits = model(dec_ipt, src, calm_model(batch[3].to(device), repr_layers=[12])["representations"][12].detach() if args.calm else None, src_key_padding_mask=src_key_padding_mask)
-                output_codon_probs = F.softmax(output_codon_logits, dim=2)
-                output_codon = torch.argmax(output_codon_probs, dim=2)
+        # calm_repr の取得も元のまま
+        calm_repr = None
+        if args.calm:
+            calm_repr = calm_model(
+                batch[3].to(device),
+                repr_layers=[12]
+            )["representations"][12].detach()
 
-            # 最も確率の高いcodonトークンを取得
-            next_item = output_codon[:, -1].unsqueeze(1)
+        # --- ここからビームサーチ対応 (args.use_beam で分岐) ---
+        if args.use_beam:
+            # beam_search は事前に定義済みとする
+            # 返り値: List[N] of List[Tensor(seq_len)]
+            # all_beams = beam_search(
+            #     model, src, dec_ipt,
+            #     pad_idx=pad_idx, eos_idx=eos_idx,
+            #     beam_size=args.beam_size, max_len=700,
+            #     calm_repr=calm_repr,
+            #     src_key_padding_mask=src_key_padding_mask,
+            #      num_return_sequences=args.num_return_sequences
+            # )
+            
+            all_beams = beam_search(
+                model, src, dec_ipt,
+                pad_idx=pad_idx, eos_idx=eos_idx,
+                beam_size=args.beam_size, max_len=700,
+                calm_repr=calm_repr,
+                src_key_padding_mask=src_key_padding_mask,
+                num_return_sequences=args.num_return_sequences,
+                num_beam_groups=args.num_beam_groups,
+                diversity_strength=args.diversity_strength, 
+                temperature=args.temperature,
+                sampling_k=args.sampling_k,
+                sampling_steps=args.sampling_steps
+            )
 
-            # 予測されたcodonトークンをデコーダの入力に追加
-            dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
+            
+            
+            # 各サンプル・各ビームを predicted_sequences, source_sequences, target_sequences に追加
+            for i, beam_list in enumerate(all_beams):
+                src_seq = alignment.extract_sequences(src[i:i+1,1:])[0]
+                tgt_seq = alignment.extract_sequences(tgt[i:i+1,1:])[0]
+                for seq in beam_list:
+                    cleaned = alignment.extract_sequences(seq.unsqueeze(0)[:,1:])  # List[List[int]]
+                    predicted_sequences += cleaned
+                    source_sequences.append(src_seq)
+                    target_sequences.append(tgt_seq)
 
-            # 文末を表すトークンが出力されたら終了
-            # 各行に'<eos>'が含まれているか否かを判定
-            end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
-            if end_token_count == len(src):
-                break
+        else:
+            # 元の Greedy 生成ループはそのまま残す
+            for _ in range(700):
+                with autocast(device_type='cuda', dtype=torch.bfloat16):
+                    output_codon_logits = model(
+                        dec_ipt, src, calm_repr,
+                        src_key_padding_mask=src_key_padding_mask
+                    )
+                    output_codon_probs = F.softmax(output_codon_logits, dim=2)
+                    next_item = torch.argmax(output_codon_probs, dim=2)[:, -1].unsqueeze(1)
+                dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
+                if (dec_ipt == eos_idx).any(dim=1).all():
+                    break
 
-        source_sequences += alignment.extract_sequences(src[:,1:])
-        target_sequences += alignment.extract_sequences(tgt[:,1:])
-        predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
+            source_sequences += alignment.extract_sequences(src[:,1:])
+            target_sequences += alignment.extract_sequences(tgt[:,1:])
+            predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
+
+        # --- ビームサーチ対応ここまで ---
+
+    # 以下以降のシーケンス変換／プロット／保存処理は変更不要です
+
 
     
     # ギャップを取り除く
     predicted_sequences = [[item for item in row if item != dataset.vocab['---']] for row in predicted_sequences]
-    plot_obj, score_ratio = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
-    save_with_unique_filename(result_folder, "align.png", plot_obj)
-    
     predicted_sequences_all =  [''.join([dataset.vocab.index_to_token[c] for c in seq]) for seq in predicted_sequences]
     source_sequences_dna = [''.join([dataset.vocab.index_to_token[c] for c in seq]) for seq in source_sequences]
     target_sequences_dna = [''.join([dataset.vocab.index_to_token[c] for c in seq]) for seq in target_sequences]
     predicted_protein_sequences_all = [str(Seq(dna).translate(to_stop=True)) for dna in predicted_sequences_all]
     source_protein_sequences = [str(Seq(dna).translate(to_stop=True)) for dna in source_sequences_dna]
     target_protein_sequences = [str(Seq(dna).translate(to_stop=True)) for dna in target_sequences_dna]
-
-    # アミノ酸散布図を作成
-    plot_obj_aa, score_ratio_aa = alignment.plot_alignment_scores_aa(source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)
-    save_with_unique_filename(result_folder, "align_aa.png", plot_obj_aa)
+    
+    if args.plot:
+        # コドンのアラインメント
+        plot_obj, score_ratio, src_tgt_mean, tgt_pred_mean = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
+        save_with_unique_filename(result_folder, "align.png", plot_obj)
+    
+        with open(os.path.join(result_folder, "codon_means.txt"), "w") as f:
+            f.write(f"src-tgt mean: {src_tgt_mean:.6f}\n")
+            f.write(f"tgt-pred mean: {tgt_pred_mean:.6f}\n")
+    
+        # アミノ酸のアラインメント
+        plot_obj_aa, score_ratio_aa, src_tgt_mean_aa, tgt_pred_mean_aa = alignment.plot_alignment_scores_aa(source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)
+        save_with_unique_filename(result_folder, "align_aa.png", plot_obj_aa)
+    
+        with open(os.path.join(result_folder, "aa_means.txt"), "w") as f:
+            f.write(f"src-tgt mean: {src_tgt_mean_aa:.6f}\n")
+            f.write(f"tgt-pred mean: {tgt_pred_mean_aa:.6f}\n")
 
 
     print("GC ratio " +  str(CG_ratio(predicted_sequences_all)))
@@ -187,9 +283,31 @@ with torch.no_grad():
         fasta_output_path = os.path.join(result_folder, f"predicted_sequences_{counter}.fasta")
         counter += 1
     # FASTA形式で保存
-    SeqIO.write([SeqRecord(Seq(seq), id=f"seq_{i+1}", description="") for i, seq in enumerate(predicted_sequences_all)], fasta_output_path, "fasta")
+    SeqIO.write([SeqRecord(Seq(seq), id=f"seq_{(i // args.beam_size) + 1}_beam{(i % args.beam_size) + 1}" if args.use_beam else f"seq_{i+1}", description="") for i, seq in enumerate(predicted_sequences_all)], fasta_output_path, "fasta")
+
     
     print(f"Predicted sequences saved to {fasta_output_path}")
+    
+    # 各オルソログごとに source, target, predicted のアミノ酸配列をまとめて保存
+    all_protein_records = []
+        
+    for i, (src_aa, tgt_aa, pred_aa) in enumerate(zip(source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)):
+        sample_idx = (i // args.beam_size) + 1 if args.use_beam else i + 1
+        beam_idx = (i % args.beam_size) + 1 if args.use_beam else None
+        all_protein_records.append(SeqRecord(Seq(src_aa), id=f"ortholog_{sample_idx}_source_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_source_protein", description=""))
+        all_protein_records.append(SeqRecord(Seq(tgt_aa), id=f"ortholog_{sample_idx}_target_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_target_protein", description=""))
+        all_protein_records.append(SeqRecord(Seq(pred_aa), id=f"ortholog_{sample_idx}_predicted_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_predicted_protein", description=""))
+
+    # ユニークなファイル名を生成
+    fasta_protein_output_path = os.path.join(result_folder, "source_target_predicted_protein.fasta")
+    counter = 1
+    while os.path.exists(fasta_protein_output_path):
+        fasta_protein_output_path = os.path.join(result_folder, f"source_target_predicted_protein_{counter}.fasta")
+        counter += 1
+    # 保存
+    SeqIO.write(all_protein_records, fasta_protein_output_path, "fasta")
+    print(f"Protein sequences (source, target, predicted) saved to {fasta_protein_output_path}")
+
 
     if args.mcts:
         mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, args.memory_mask, result_folder)

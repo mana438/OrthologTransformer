@@ -2,7 +2,6 @@ from torch.nn.utils.rnn import pad_sequence
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from torch.amp import autocast
 from Bio import pairwise2
 from Bio.Align import substitution_matrices
 from Bio.Seq import Seq
@@ -17,7 +16,6 @@ import statistics
 import numpy as np
 import json
 import copy
-
 
 class alignment:
     def  __init__(self, vocab):
@@ -220,7 +218,7 @@ class alignment:
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.grid(True)
-        return plt, score_ratio, src_tgt_mean, tgt_pred_mean
+        return plt, score_ratio
         
         
     def plot_alignment_scores_aa(self, src_seqs, tgt_seqs, pred_seqs, 
@@ -287,7 +285,7 @@ class alignment:
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.grid(True)
-        return plt, score_ratio, src_tgt_mean, tgt_pred_mean
+        return plt, score_ratio
 
     
     def print_alignment(self, aligned_seq1, aligned_seq2, score):
@@ -405,182 +403,3 @@ def save_with_unique_filename(result_folder, base_name, plot_obj):
         output_path = os.path.join(result_folder, f"{name}_{counter}{ext}")
     plot_obj.savefig(output_path)
     print(f"Plot saved to {output_path}")
-    
-    
-    
-# def beam_search(model, src, start_tokens, pad_idx, eos_idx,
-#                 beam_size=5, max_len=700, calm_repr=None,
-#                 src_key_padding_mask=None, num_return_sequences=1):
-#     N = src.size(0)
-#     device = src.device
-#     # beams: List of (tokens: Tensor[N,L], logp: Tensor[N])
-#     beams = [(start_tokens, torch.zeros(N, device=device))]
-#     # finished[i]: List of (seq: Tensor, score: float)
-#     finished = [[] for _ in range(N)]
-
-#     for _ in range(max_len):
-#         all_candidates = []
-#         for tokens, logp in beams:
-#             expanding = ~(tokens[:, -1] == eos_idx)
-#             if not expanding.any():
-#                 all_candidates.append((tokens, logp))
-#                 continue
-
-#             with autocast(device_type='cuda', dtype=torch.bfloat16):
-#                 logits = model(tokens, src, calm_repr,
-#                               src_key_padding_mask=src_key_padding_mask)
-#             log_probs = F.log_softmax(logits[:, -1], dim=-1)  # (N, V)
-#             topk_logp, topk_idx = torch.topk(log_probs, beam_size, dim=-1)  # (N, k)
-
-#             for b in range(beam_size):
-#                 next_tok = topk_idx[:, b].unsqueeze(1)            # (N,1)
-#                 new_seq  = torch.cat([tokens, next_tok], dim=1)   # (N,L+1)
-#                 new_logp = logp + topk_logp[:, b]                 # (N)
-#                 all_candidates.append((new_seq, new_logp))
-
-#         # スコア上位 beam_size 本に絞り込む
-#         scores = torch.stack([cand[1].mean() for cand in all_candidates])
-#         top_scores, idx = torch.topk(scores, beam_size)
-#         beams = [all_candidates[i] for i in idx]
-
-#         # 完了したシーケンスを集める
-#         for seq, lp in beams:
-#             ended = (seq[:, -1] == eos_idx)
-#             for i in range(N):
-#                 if ended[i]:
-#                     finished[i].append((seq[i], lp[i].item()))
-
-#         # 全サンプルが少なくとも1本完了したら打ち切り
-#         if all(finished[i] for i in range(N)):
-#             break
-
-#     # 各サンプルごとに beam_size 本ずつ返す
-#     outputs = []
-#     for i in range(N):
-#         # 完了したものが beam_size 未満なら current beams を補完
-#         seqs = [s for s,_ in sorted(finished[i], key=lambda x: x[1], reverse=True)]
-#         if len(seqs) < beam_size:
-#             # beams のトークン列から補う
-#             for seq,lp in beams:
-#                 seqs.append(seq[i])
-#                 if len(seqs) == beam_size:
-#                     break
-#         outputs.append(seqs[:num_return_sequences])
-#     return outputs  # List[N] of List[Tensor(length)]
-
-
-# def beam_search(model, src, start_tokens, pad_idx, eos_idx,
-#                 beam_size=5, max_len=700, calm_repr=None,
-#                 src_key_padding_mask=None, num_return_sequences=1,
-#                 num_beam_groups=1, diversity_strength=0.5, temperature=1.0, sampling_k=5, sampling_steps=2):
-def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, calm_repr, src_key_padding_mask, num_return_sequences, num_beam_groups, diversity_strength, temperature, sampling_k, sampling_steps):
-
-    assert beam_size % num_beam_groups == 0, "beam_size must be divisible by num_beam_groups"
-    assert num_return_sequences <= beam_size, "num_return_sequences must be <= beam_size"
-
-    N = src.size(0)
-    device = src.device
-    beams = [(start_tokens, torch.zeros(N, device=device))]  # 初期ビーム
-    finished = [[] for _ in range(N)]  # 各サンプルごとに完了ビームを格納
-
-    group_size = beam_size // num_beam_groups
-    
-    step = 0
-    for _ in range(max_len):
-        all_candidates = []
-
-        for group_id in range(num_beam_groups):
-            group_offset = group_id * group_size
-            group_tokens = beams[group_offset:group_offset + group_size]
-
-            for tokens, logp in group_tokens:
-                expanding = ~(tokens[:, -1] == eos_idx)
-                if not expanding.any():
-                    all_candidates.append((tokens, logp))
-                    continue
-
-                with autocast(device_type='cuda', dtype=torch.bfloat16):
-                    logits = model(tokens, src, calm_repr,
-                                   src_key_padding_mask=src_key_padding_mask)
-                print("logits at step", step, logits[:, -1][0])
-
-                # log_probs = F.log_softmax(logits[:, -1], dim=-1)  # (N, V)
-                log_probs = F.log_softmax(logits[:, -1] / temperature, dim=-1)
-
-
-                # 多様性ペナルティを加える
-                if group_id > 0:
-                    prev_tokens = [cand[0][:, -1] for cand in all_candidates[-group_size:]]
-                    if prev_tokens:
-                        prev_tokens = torch.cat(prev_tokens, dim=0)  # (group_size * N,)
-                        penalty = torch.zeros_like(log_probs)
-                        for t in prev_tokens.unique():
-                            penalty[:, t] -= diversity_strength
-                        log_probs += penalty
-
-                # topk_logp, topk_idx = torch.topk(log_probs, group_size, dim=-1)
-                # for b in range(group_size):
-                #     next_tok = topk_idx[:, b].unsqueeze(1)
-                #     new_seq = torch.cat([tokens, next_tok], dim=1)
-                #     new_logp = logp + topk_logp[:, b]
-                #     all_candidates.append((new_seq, new_logp))
-                    
-                # if step < sampling_steps:
-                #     topk_probs, topk_idx = torch.topk(log_probs.exp(), sampling_k, dim=-1)  # softmax → Top-k
-                #     sampled_idx = torch.multinomial(topk_probs, num_samples=group_size, replacement=True)  # (N, group_size)
-                #     for b in range(group_size):
-                #         next_tok = topk_idx[torch.arange(N), sampled_idx[:, b]].unsqueeze(1)
-                #         new_seq = torch.cat([tokens, next_tok], dim=1)
-                #         new_logp = logp + torch.log(topk_probs[torch.arange(N), sampled_idx[:, b]])
-                #         all_candidates.append((new_seq, new_logp))
-
-
-                if step < sampling_steps:
-                    for _ in range(group_size):
-                        # 各ビームごとに別々に Top-k サンプリングを行う
-                        topk_probs, topk_idx = torch.topk(log_probs.exp(), sampling_k, dim=-1)  # (N, k)
-                        sampled_token_idx = torch.multinomial(topk_probs, num_samples=1).squeeze(1)  # (N,)
-                        next_tok = topk_idx[torch.arange(N), sampled_token_idx].unsqueeze(1)  # (N,1)
-                        new_seq = torch.cat([tokens, next_tok], dim=1)
-                        new_logp = logp + torch.log(topk_probs[torch.arange(N), sampled_token_idx])
-                        all_candidates.append((new_seq, new_logp))
-                        
-
-                else:
-                    topk_logp, topk_idx = torch.topk(log_probs, group_size, dim=-1)
-                    for b in range(group_size):
-                        next_tok = topk_idx[:, b].unsqueeze(1)
-                        new_seq = torch.cat([tokens, next_tok], dim=1)
-                        new_logp = logp + topk_logp[:, b]
-                        all_candidates.append((new_seq, new_logp))
-
-
-        # 上位 beam_size 本を選択（平均スコアで簡易評価）
-        scores = torch.stack([cand[1].mean() for cand in all_candidates])
-        # top_scores, idx = torch.topk(scores, beam_size)
-        top_scores, idx = torch.topk(scores, min(len(scores), beam_size))
-        beams = [all_candidates[i] for i in idx]
-
-        # EOS で終わっているビームを finished に追加
-        for seq, lp in beams:
-            ended = (seq[:, -1] == eos_idx)
-            for i in range(N):
-                if ended[i]:
-                    finished[i].append((seq[i], lp[i].item()))
-
-        if all(finished[i] for i in range(N)):
-            break
-        
-        step += 1
-        
-    # 各サンプルごとに num_return_sequences 本ずつ返す
-    outputs = []
-    for i in range(N):
-        seqs = [s for s, _ in sorted(finished[i], key=lambda x: x[1], reverse=True)]
-        if len(seqs) < num_return_sequences:
-            for seq, lp in beams:
-                seqs.append(seq[i])
-                if len(seqs) == num_return_sequences:
-                    break
-        outputs.append(seqs[:num_return_sequences])
-    return outputs  # List[N] of List[Tensor]

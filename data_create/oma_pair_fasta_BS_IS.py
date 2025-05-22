@@ -54,7 +54,9 @@ def extract_and_write_pairs(fasta_file, groups, output_dir, mode):
     # input_species, output_species, output_dir = "SYNJA", "ECO10", output_dir.replace("BS_IS", "E1_SJ")	
     # input_species, output_species, output_dir = "RHIL3", "PSEF5", output_dir.replace("BS_IS", "PF_RL")		
     # input_species, output_species, output_dir = "MYCTC", "ECO10", output_dir.replace("BS_IS", "E1_MT")
-    input_species, output_species, output_dir = "THET2", "LACLA", output_dir.replace("BS_IS", "LL_TT")
+    # input_species, output_species, output_dir = "THET2", "LACLA", output_dir.replace("BS_IS", "LL_TT")
+    input_species, output_species, output_dir = "IDESA", "ECO1A", output_dir.replace("BS_IS", "IDESA_ECO1A")
+    
 
 
     if not os.path.exists(output_dir):
