@@ -26,11 +26,11 @@ class Node:
         return max(self.children, key=lambda node: node.value / (node.visits + 1e-6) +
                                         0.5 * math.sqrt(math.log(self.visits + 1) / (node.visits + 1e-6)))
 
-    def expand(self, model, vocab, src, memory_mask, len_predicted_seq):
+    def expand(self, model, vocab, src, len_predicted_seq):
         # ノードが完全に展開されていない場合、新しい子ノードを作成
         if self.visits > 3 and not self.is_fully_expanded() and len(self.sequence) < len_predicted_seq:
             # トークンの確率を取得
-            output_codon = model(self.dec_ipt, src, memory_mask)
+            output_codon = model(self.dec_ipt, src)
             # Softmaxを適用して確率を正規化
             probabilities = F.softmax(output_codon, dim=2)
 
@@ -72,14 +72,14 @@ def reward(sequence, target_gc_content=0.365):
     all_reward = gc_content_reward
     return all_reward, mfe, gc_content
 
-def simulate(node, model, src, template_seq, vocab, memory_mask, epoch):
+def simulate(node, model, src, template_seq, vocab, epoch):
     # ロールアウトフェーズ: ランダムにアクションを選択し、最終状態で報酬を計算
     
     if (epoch % 500) == 0:
         sequence = node.sequence.copy()  # 現在のシーケンスをコピー
         dec_ipt = node.dec_ipt.detach()
         for i in range(1000):
-            output_codon = model(dec_ipt, src, memory_mask)
+            output_codon = model(dec_ipt, src)
             output_codon = torch.argmax(output_codon, dim=2)
             # 最も確率の高いcodonトークンを取得
             next_item = output_codon[:, -1].unsqueeze(1) 
@@ -106,7 +106,7 @@ def backpropagate(node, value):
         node.value += value  # 価値を更新
         node = node.parent  # 親ノードに移動
 
-def main_loop(root, model, vocab, tgt, src, predicted_seq, memory_mask, result_folder, iterations=1000000):
+def main_loop(root, model, vocab, tgt, src, predicted_seq, result_folder, iterations=1000000):
     rewards = []  # 報酬値を保存するリスト
     gc_contents = []  # GCコンテンツの値を保存するリスト
     mfes = []  # 最低自由エネルギー(MFE)の値を保存するリスト
@@ -118,12 +118,12 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, memory_mask, result_f
         node = root  # ルートノードからスタート
         while node.is_fully_expanded():
             node = node.best_child()
-        node.expand(model, vocab, src, memory_mask, len(predicted_seq))  # ノードの訪問回数が一定のしきい値を超えた場合にのみ展開
+        node.expand(model, vocab, src, len(predicted_seq))  # ノードの訪問回数が一定のしきい値を超えた場合にのみ展開
         if node.children:
             child = node.children[0]  # 最初に追加された子ノードを取得
         else:
             child = node
-        sequence = simulate(child, model, src, template_seq, vocab, memory_mask, i)  # 子ノードに対してシミュレーションを実行
+        sequence = simulate(child, model, src, template_seq, vocab, i)  # 子ノードに対してシミュレーションを実行
 
         if (i % 500) == 0:
             template_seq = sequence.copy()
@@ -173,8 +173,8 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, memory_mask, result_f
             plt.close()
 
 
-def mcts(model, test_loader, vocab, device, edition_fasta, predicted_sequences, memory_mask, result_folder):
-    shutil.copy("./mcts.py", os.path.join(result_folder, "mcts.py"))
+def mcts(model, test_loader, vocab, device, edition_fasta, predicted_sequences, result_folder):
+    # shutil.copy("./mcts.py", os.path.join(result_folder, "mcts.py"))
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)
@@ -190,6 +190,6 @@ def mcts(model, test_loader, vocab, device, edition_fasta, predicted_sequences, 
             print(sequence)
         
         root = Node(sequence=sequence, dec_ipt=dec_ipt)  # 初期状態のノードを作成
-        main_loop(root, model, vocab, tgt, src, predicted_sequences[0], memory_mask, result_folder)  # MCTSを実行
+        main_loop(root, model, vocab, tgt, src, predicted_sequences[0], result_folder)  # MCTSを実行
         best_child = root.best_child()  # 最良の子ノードを取得
         print(f"Best child sequence: {best_child.sequence}, Value: {best_child.value / best_child.visits}")  # 結果を出力

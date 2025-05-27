@@ -5,7 +5,6 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
-# from torch.cuda.amp import GradScaler, autocast
 from torch.amp import autocast
 
 from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, count_parameters, CG_ratio, save_with_unique_filename, beam_search
@@ -31,12 +30,6 @@ from arg_parser import get_args
 import pickle
 
 
-from calm.sequence import CodonSequence  # CodonSequenceクラス
-from calm.alphabet import Alphabet  # アルファベット定義
-from calm.model import ProteinBertModel
-from calm.pretrained import ARGS  # 事前に定義されたARGSを使用
-
-
 args = get_args()
 
 result_folder = args.result_folder
@@ -47,16 +40,17 @@ with open(os.path.join(result_folder, "args_test.json"), "w") as f:
     json.dump(vars(args), f, indent=4)
 
 
-# OMA_speciesファイル
-OMA_species = args.OMA_species
+script_dir = os.path.dirname(os.path.abspath(__file__))
+default_species_path = os.path.join(script_dir, "prokaryotes_group.txt")
+default_vocab_path = os.path.join(script_dir, "vocab_OMA.json")
+
 # OrthologDataset オブジェクトを作成する
-dataset = OrthologDataset(OMA_species,"./vocab_OMA.json")
+dataset = OrthologDataset(default_species_path,default_vocab_path)
 # テスト対象のオルソログ関係ファイルのリスト
 ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
-test_dataset = dataset.load_data(ortholog_files_test, False, args.calm)
+test_dataset = dataset.load_data(ortholog_files_test, False)
 print("test: ", len(test_dataset), flush=True)
 test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn)
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # GPUが利用可能な場合は 'cuda:0' にマップ、そうでない場合は CPU にマップ
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -78,35 +72,6 @@ if args.model_input:
 print(f'Total number of parameters: {count_parameters(model)}', flush=True)
 
 
-if args.calm:
-    # calm適用
-    weights_file = os.path.join('/home/4/ux03574/workplace/CodonTransfer/calm/calm_weights/calm_weights.ckpt')
-    # if not os.path.exists(weights_file):
-    #     print('Downloading model weights...')
-    #     os.makedirs(model_folder, exist_ok=True)
-    #     url = 'http://opig.stats.ox.ac.uk/data/downloads/calm_weights.pkl'
-    #     with open(weights_file, 'wb') as handle:
-    #         handle.write(requests.get(url).content)
-                
-    # GPUの使用を確認
-    alphabet = Alphabet.from_architecture("CodonModel")
-    batch_converter = alphabet.get_batch_converter()
-
-    # モデルの初期化
-    calm_model = ProteinBertModel(ARGS, alphabet).to(device)
-    with open(weights_file, 'rb') as handle:
-        state_dict = pickle.load(handle)
-        calm_model.load_state_dict(state_dict)
-        
-    # calm_model = torch.compile(calm_model)
-    
-    # calm_modelのパラメータをフリーズ
-    for param in calm_model.parameters():
-        param.requires_grad = False
-        
-    if args.horovod:
-        hvd.broadcast_parameters(calm_model.state_dict(), root_rank=0)
-
 # torch.compile()で最適化
 # model = torch.compile(model, backend="aot_eager")
 # model = torch.compile(model)
@@ -121,43 +86,6 @@ source_sequences = []
 target_sequences = []
 predicted_sequences = []
 
-# with torch.no_grad():
-#     for batch in test_loader:
-#         tgt = batch[1].to(device)
-#         src = batch[2].to(device)
-
-#         # dec_ipt = torch.tensor([[dataset.vocab['<bos>']]] * len(src), dtype=torch.long, device=device)
-#         dec_ipt = tgt[:, :2]
-
-#         if args.edition_fasta:
-#             dec_ipt = tgt[:,:-1]
-        
-#         src_key_padding_mask = (src == pad_idx).to(device)
-#         # tgt_key_padding_mask = (dec_ipt == pad_idx).to(torch.bfloat16).to(device)
-
-#         for i in range(700):
-#             with autocast(device_type='cuda', dtype=torch.bfloat16):  # 評価でもbf16演算を有効化
-#             # with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-#                 output_codon_logits = model(dec_ipt, src, calm_model(batch[3].to(device), repr_layers=[12])["representations"][12].detach() if args.calm else None, src_key_padding_mask=src_key_padding_mask)
-#                 output_codon_probs = F.softmax(output_codon_logits, dim=2)
-#                 output_codon = torch.argmax(output_codon_probs, dim=2)
-
-#             # 最も確率の高いcodonトークンを取得
-#             next_item = output_codon[:, -1].unsqueeze(1)
-
-#             # 予測されたcodonトークンをデコーダの入力に追加
-#             dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
-
-#             # 文末を表すトークンが出力されたら終了
-#             # 各行に'<eos>'が含まれているか否かを判定
-#             end_token_count = (dec_ipt == dataset.vocab['<eos>']).any(dim=1).sum().item()
-#             if end_token_count == len(src):
-#                 break
-
-#         source_sequences += alignment.extract_sequences(src[:,1:])
-#         target_sequences += alignment.extract_sequences(tgt[:,1:])
-#         predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
-        
 
 # 1) ループ開始前に EOS トークンのインデックスを取得しておく
 eos_idx = dataset.vocab['<eos>']
@@ -174,32 +102,12 @@ with torch.no_grad():
 
         src_key_padding_mask = (src == pad_idx).to(device)
 
-        # calm_repr の取得も元のまま
-        calm_repr = None
-        if args.calm:
-            calm_repr = calm_model(
-                batch[3].to(device),
-                repr_layers=[12]
-            )["representations"][12].detach()
-
         # --- ここからビームサーチ対応 (args.use_beam で分岐) ---
         if args.use_beam:
-            # beam_search は事前に定義済みとする
-            # 返り値: List[N] of List[Tensor(seq_len)]
-            # all_beams = beam_search(
-            #     model, src, dec_ipt,
-            #     pad_idx=pad_idx, eos_idx=eos_idx,
-            #     beam_size=args.beam_size, max_len=700,
-            #     calm_repr=calm_repr,
-            #     src_key_padding_mask=src_key_padding_mask,
-            #      num_return_sequences=args.num_return_sequences
-            # )
-            
             all_beams = beam_search(
                 model, src, dec_ipt,
                 pad_idx=pad_idx, eos_idx=eos_idx,
                 beam_size=args.beam_size, max_len=700,
-                calm_repr=calm_repr,
                 src_key_padding_mask=src_key_padding_mask,
                 num_return_sequences=args.num_return_sequences,
                 num_beam_groups=args.num_beam_groups,
@@ -226,8 +134,7 @@ with torch.no_grad():
             for _ in range(700):
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
                     output_codon_logits = model(
-                        dec_ipt, src, calm_repr,
-                        src_key_padding_mask=src_key_padding_mask
+                        dec_ipt, src, src_key_padding_mask=src_key_padding_mask
                     )
                     output_codon_probs = F.softmax(output_codon_logits, dim=2)
                     next_item = torch.argmax(output_codon_probs, dim=2)[:, -1].unsqueeze(1)
@@ -310,4 +217,4 @@ with torch.no_grad():
 
 
     if args.mcts:
-        mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, args.memory_mask, result_folder)
+        mcts(model, test_loader, dataset.vocab, device, args.edition_fasta, predicted_sequences, result_folder)

@@ -1,0 +1,7 @@
+torch>=2.0
+biopython>=1.85
+numpy>=1.26
+pandas>=2.2
+scipy>=1.13
+schedulefree==1.4
+ViennaRNA==2.6.4

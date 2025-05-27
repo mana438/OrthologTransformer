@@ -1,7 +1,0 @@
-{
-"d_model": 512,
-"nhead": 16,
-"num_layers": 20,
-"dim_feedforward": 512
-}
-    

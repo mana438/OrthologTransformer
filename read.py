@@ -9,8 +9,6 @@ from Bio import SeqIO
 import time
 import json
 
-from calm.sequence import CodonSequence  # CodonSequenceクラス
-from calm.alphabet import Alphabet  # アルファベット定義
 
 class Vocab:
     def __init__(self, tokens, json_path):
@@ -22,8 +20,10 @@ class Vocab:
 
     def load_json(self):
         if os.path.exists(self.json_path) and os.path.getsize(self.json_path) > 0:
+            
             try:
                 with open(self.json_path, 'r') as file:
+                    print("here!")
                     data = json.load(file)
                     self.token_to_index = data.get('token_to_index', {})
                     self.index_to_token = {int(key): val for key, val in data.get('index_to_token', {}).items()}
@@ -80,16 +80,15 @@ class OrthologDataset(Dataset):
         self.vocab = Vocab(tokens, json_path)
         self.vocab_target = spc + codons + gap
 
-        #calmの辞書
-        alphabet = Alphabet.from_architecture("CodonModel")
-        self.token_dict = alphabet.tok_to_idx  # トークンとインデックスの対応辞書
 
-    def load_data(self, ortholog_files, reverse, calm):
+    def load_data(self, ortholog_files, reverse):
         dataset = []
         
         # オルソログ関係ファイルを1つずつ読み込む
         for ortholog_file in ortholog_files:
-            # 正規表現を用いてグループ番号と菌種名を抽出
+            # デフォルト値
+            group_number = "NA"
+            # パターン①: group番号あり
             match = re.search(r"group(\d+)_([A-Z0-9]+)_([A-Z0-9]+)_\d+\.fasta", ortholog_file)
 
             if match:
@@ -97,7 +96,16 @@ class OrthologDataset(Dataset):
                 species_name_1 = match.group(2)
                 species_name_2 = match.group(3)
             else:
-                print("No match found")
+                # パターン②: group番号なし → species1_species2.fasta のような形式を仮定
+                # 例: ECOLI_IDESA.fasta, ECOLI_IDESA_1.fasta
+                basename = os.path.basename(ortholog_file)
+                fallback_match = re.search(r"([A-Z0-9]+)_([A-Z0-9]+)(?:_\d+)?\.fasta", basename)
+                if fallback_match:
+                    species_name_1 = fallback_match.group(1)
+                    species_name_2 = fallback_match.group(2)
+                else:
+                    print(f"Filename pattern not recognized: {ortholog_file}")
+                    continue  # スキップ
 
             sequences = []
             # fastaファイルを読み込み、各配列を辞書に格納
@@ -105,20 +113,13 @@ class OrthologDataset(Dataset):
                 sequences.append(str(seq_record.seq))
 
             # ペアが有効である場合、データに追加する
-            if self.is_valid_pair(sequences[0], sequences[1]) or group_number == "9999999":
+            if self.is_valid_pair(sequences[0], sequences[1]):
                 seq1_codons = self.convert_to_codons(sequences[0], species_name_1)                            
                 seq2_codons = self.convert_to_codons(sequences[1], species_name_2)                            
                  # 基本のデータを追加
-                if calm:
-                    calm_feature = self.convert_to_codons_calm(sequences[1])
-                    dataset.append((group_number, seq1_codons, seq2_codons, calm_feature))
-                    if reverse:
-                        calm_feature = self.convert_to_codons_calm(sequences[0])
-                        dataset.append((group_number, seq2_codons, seq1_codons, calm_feature))
-                else:
-                    dataset.append((group_number, seq1_codons, seq2_codons))
-                    if reverse:
-                        dataset.append((group_number, seq2_codons, seq1_codons))
+                dataset.append((group_number, seq1_codons, seq2_codons))
+                if reverse:
+                    dataset.append((group_number, seq2_codons, seq1_codons))
         
         return dataset
 
@@ -128,11 +129,6 @@ class OrthologDataset(Dataset):
         seq_species_index = self.vocab[seq_species]
         codon_seq = [seq_species_index] +  [self.vocab['<bos>']] + [self.vocab[codon] for codon in codons] + [self.vocab['<eos>']]
         return codon_seq
-
-    def convert_to_codons_calm(self, seq):        
-        rna_seq = seq.replace("T", "U")
-        token = [0] + [self.token_dict[codon] for codon in [rna_seq[i:i+3] for i in range(0, len(rna_seq), 3)] if codon in self.token_dict] + [2]
-        return token
 
 
     # 配列ペアが有効であるかどうかを判断する

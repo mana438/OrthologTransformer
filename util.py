@@ -304,7 +304,7 @@ class alignment:
 
 
 def custom_collate_fn(batch):
-    ortholog_groups, targets, inputs, calm_inputs = [], [], [], []
+    ortholog_groups, targets, inputs = [], [], []
 
     for item in batch:
         # バッチの要素を分解
@@ -312,21 +312,10 @@ def custom_collate_fn(batch):
         ortholog_groups.append(ortholog_group)
         targets.append(torch.tensor(tgt))
         inputs.append(torch.tensor(inp))
-
-        # 4つ目の要素が存在する場合、それを格納
-        if len(item) > 3:
-            calm_inputs.append(torch.tensor(item[3]))
-        else:
-            # 4つ目が存在しない場合はパディング用のテンソルを格納
-            calm_inputs.append(torch.tensor([1]))
-
     # パディング処理
     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
-    calm_inputs_padded = pad_sequence(calm_inputs, batch_first=True, padding_value=1)
-    
-    # return ortholog_groups, targets, inputs, calm_inputs
-    return ortholog_groups, targets_padded, inputs_padded, calm_inputs_padded
+    return ortholog_groups, targets_padded, inputs_padded
 
 
 def count_nonzero_matches(tensor1, tensor2):
@@ -407,73 +396,7 @@ def save_with_unique_filename(result_folder, base_name, plot_obj):
     print(f"Plot saved to {output_path}")
     
     
-    
-# def beam_search(model, src, start_tokens, pad_idx, eos_idx,
-#                 beam_size=5, max_len=700, calm_repr=None,
-#                 src_key_padding_mask=None, num_return_sequences=1):
-#     N = src.size(0)
-#     device = src.device
-#     # beams: List of (tokens: Tensor[N,L], logp: Tensor[N])
-#     beams = [(start_tokens, torch.zeros(N, device=device))]
-#     # finished[i]: List of (seq: Tensor, score: float)
-#     finished = [[] for _ in range(N)]
-
-#     for _ in range(max_len):
-#         all_candidates = []
-#         for tokens, logp in beams:
-#             expanding = ~(tokens[:, -1] == eos_idx)
-#             if not expanding.any():
-#                 all_candidates.append((tokens, logp))
-#                 continue
-
-#             with autocast(device_type='cuda', dtype=torch.bfloat16):
-#                 logits = model(tokens, src, calm_repr,
-#                               src_key_padding_mask=src_key_padding_mask)
-#             log_probs = F.log_softmax(logits[:, -1], dim=-1)  # (N, V)
-#             topk_logp, topk_idx = torch.topk(log_probs, beam_size, dim=-1)  # (N, k)
-
-#             for b in range(beam_size):
-#                 next_tok = topk_idx[:, b].unsqueeze(1)            # (N,1)
-#                 new_seq  = torch.cat([tokens, next_tok], dim=1)   # (N,L+1)
-#                 new_logp = logp + topk_logp[:, b]                 # (N)
-#                 all_candidates.append((new_seq, new_logp))
-
-#         # スコア上位 beam_size 本に絞り込む
-#         scores = torch.stack([cand[1].mean() for cand in all_candidates])
-#         top_scores, idx = torch.topk(scores, beam_size)
-#         beams = [all_candidates[i] for i in idx]
-
-#         # 完了したシーケンスを集める
-#         for seq, lp in beams:
-#             ended = (seq[:, -1] == eos_idx)
-#             for i in range(N):
-#                 if ended[i]:
-#                     finished[i].append((seq[i], lp[i].item()))
-
-#         # 全サンプルが少なくとも1本完了したら打ち切り
-#         if all(finished[i] for i in range(N)):
-#             break
-
-#     # 各サンプルごとに beam_size 本ずつ返す
-#     outputs = []
-#     for i in range(N):
-#         # 完了したものが beam_size 未満なら current beams を補完
-#         seqs = [s for s,_ in sorted(finished[i], key=lambda x: x[1], reverse=True)]
-#         if len(seqs) < beam_size:
-#             # beams のトークン列から補う
-#             for seq,lp in beams:
-#                 seqs.append(seq[i])
-#                 if len(seqs) == beam_size:
-#                     break
-#         outputs.append(seqs[:num_return_sequences])
-#     return outputs  # List[N] of List[Tensor(length)]
-
-
-# def beam_search(model, src, start_tokens, pad_idx, eos_idx,
-#                 beam_size=5, max_len=700, calm_repr=None,
-#                 src_key_padding_mask=None, num_return_sequences=1,
-#                 num_beam_groups=1, diversity_strength=0.5, temperature=1.0, sampling_k=5, sampling_steps=2):
-def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, calm_repr, src_key_padding_mask, num_return_sequences, num_beam_groups, diversity_strength, temperature, sampling_k, sampling_steps):
+def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, src_key_padding_mask, num_return_sequences, num_beam_groups, diversity_strength, temperature, sampling_k, sampling_steps):
 
     assert beam_size % num_beam_groups == 0, "beam_size must be divisible by num_beam_groups"
     assert num_return_sequences <= beam_size, "num_return_sequences must be <= beam_size"
@@ -500,11 +423,8 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
                     continue
 
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
-                    logits = model(tokens, src, calm_repr,
-                                   src_key_padding_mask=src_key_padding_mask)
-                print("logits at step", step, logits[:, -1][0])
+                    logits = model(tokens, src, src_key_padding_mask=src_key_padding_mask)
 
-                # log_probs = F.log_softmax(logits[:, -1], dim=-1)  # (N, V)
                 log_probs = F.log_softmax(logits[:, -1] / temperature, dim=-1)
 
 
@@ -517,23 +437,6 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
                         for t in prev_tokens.unique():
                             penalty[:, t] -= diversity_strength
                         log_probs += penalty
-
-                # topk_logp, topk_idx = torch.topk(log_probs, group_size, dim=-1)
-                # for b in range(group_size):
-                #     next_tok = topk_idx[:, b].unsqueeze(1)
-                #     new_seq = torch.cat([tokens, next_tok], dim=1)
-                #     new_logp = logp + topk_logp[:, b]
-                #     all_candidates.append((new_seq, new_logp))
-                    
-                # if step < sampling_steps:
-                #     topk_probs, topk_idx = torch.topk(log_probs.exp(), sampling_k, dim=-1)  # softmax → Top-k
-                #     sampled_idx = torch.multinomial(topk_probs, num_samples=group_size, replacement=True)  # (N, group_size)
-                #     for b in range(group_size):
-                #         next_tok = topk_idx[torch.arange(N), sampled_idx[:, b]].unsqueeze(1)
-                #         new_seq = torch.cat([tokens, next_tok], dim=1)
-                #         new_logp = logp + torch.log(topk_probs[torch.arange(N), sampled_idx[:, b]])
-                #         all_candidates.append((new_seq, new_logp))
-
 
                 if step < sampling_steps:
                     for _ in range(group_size):

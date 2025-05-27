@@ -5,7 +5,6 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, distributed
 from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
-# from torch.cuda.amp import GradScaler, autocast
 from torch.amp import autocast, GradScaler
 
 from util import custom_collate_fn, alignment, count_nonzero_matches, load_params, check_condition, allreduce, count_parameters, CG_ratio
@@ -25,13 +24,6 @@ import argparse
 import glob
 from arg_parser import get_args
 import pickle
-
-
-from calm.sequence import CodonSequence  # CodonSequenceクラス
-from calm.alphabet import Alphabet  # アルファベット定義
-from calm.model import ProteinBertModel
-from calm.pretrained import ARGS  # 事前に定義されたARGSを使用
-
 import schedulefree
 
 args = get_args()
@@ -44,10 +36,12 @@ sys.stdout = open(os.path.join(result_folder, "output.txt"), "a")
 with open(os.path.join(result_folder, "args.json"), "a") as f:
     json.dump(vars(args), f, indent=4)
 
-# OMA_speciesファイル
-OMA_species = args.OMA_species
+script_dir = os.path.dirname(os.path.abspath(__file__))
+default_species_path = os.path.join(script_dir, "prokaryotes_group.txt")
+default_vocab_path = os.path.join(script_dir, "vocab_OMA.json")
+
 # OrthologDataset オブジェクトを作成する
-dataset = OrthologDataset(OMA_species,"./vocab_OMA.json")
+dataset = OrthologDataset(default_species_path,default_vocab_path)
 
 start_time = time.time() 
 # もし pickle ファイルが存在すれば、そこから読み込む
@@ -58,7 +52,7 @@ else:
     # 学習のみのオルソログ関係ファイルのリスト
     ortholog_files_train = glob.glob(args.ortholog_files_train.replace("'", ""))
     print("pre: ",len(ortholog_files_train), flush=True)
-    train_dataset = dataset.load_data(ortholog_files_train, args.reverse, args.calm)
+    train_dataset = dataset.load_data(ortholog_files_train, args.reverse)
 
 print(f"data load Time: {time.time() - start_time:.2f} seconds", flush=True)
 print("train: ", len(train_dataset), flush=True)
@@ -119,36 +113,6 @@ print(f'Total number of parameters: {count_parameters(model)}', flush=True)
 # torch.compile()で最適化
 # model = torch.compile(model)
 
-if args.calm:
-    # calm適用
-    weights_file = os.path.join('/home/4/ux03574/workplace/CodonTransfer/calm/calm_weights/calm_weights.ckpt')
-    # if not os.path.exists(weights_file):
-    #     print('Downloading model weights...')
-    #     os.makedirs(model_folder, exist_ok=True)
-    #     url = 'http://opig.stats.ox.ac.uk/data/downloads/calm_weights.pkl'
-    #     with open(weights_file, 'wb') as handle:
-    #         handle.write(requests.get(url).content)
-                
-    # GPUの使用を確認
-    alphabet = Alphabet.from_architecture("CodonModel")
-    batch_converter = alphabet.get_batch_converter()
-
-    # モデルの初期化
-    calm_model = ProteinBertModel(ARGS, alphabet).to(device)
-    with open(weights_file, 'rb') as handle:
-        state_dict = pickle.load(handle)
-        calm_model.load_state_dict(state_dict)
-        
-    # calm_model = torch.compile(calm_model)
-    
-    # calm_modelのパラメータをフリーズ
-    for param in calm_model.parameters():
-        param.requires_grad = False
-        
-    if args.horovod:
-        hvd.broadcast_parameters(calm_model.state_dict(), root_rank=0)
-
-
 # 損失関数と最適化アルゴリズム
 pad_idx = dataset.vocab['<pad>']
 criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
@@ -207,8 +171,7 @@ for epoch in range(args.num_epochs):
             tgt_key_padding_mask = (dec_ipt == pad_idx).to(device)
 
             with autocast(device_type='cuda', dtype=torch.bfloat16):
-                output_codon = model(dec_ipt, src, calm_model(batch[3].to(device), repr_layers=[12])["representations"][12].detach() if args.calm else None, src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask)
-                # output_codon = model(dec_ipt, src, calm_output)
+                output_codon = model(dec_ipt, src, None, src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask)
                 output_codon = output_codon.transpose(1, 2) #CrossEntropyLossの時
                 loss = criterion(output_codon, dec_tgt)
 
