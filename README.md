@@ -166,7 +166,14 @@ Use this to adapt the model to new species pairs or functional domains!
 ## 📚 Citation
 
 ```
-Akiyama, M., et al. (2025). Generative AI-driven artificial DNA design for enhancing inter-species gene activation and enzymatic degradation of PET. bioRxiv. https://doi.org/10.1101/2025.05.08.652991
+Manato Akiyama
+, Motohiko Tashiro
+, Ying Huang
+, Mika Uehara
+, Taiki Kanzaki, Mitsuhiro Itaya
+, Masakazu Kataoka
+, Kenji Miyamoto
+, and Yasubumi Sakakibara (2025). Generative AI-driven artificial DNA design for enhancing inter-species gene activation and enzymatic degradation of PET. bioRxiv. https://doi.org/10.1101/2025.05.08.652991
 ```
 
 ---
@@ -175,4 +182,4 @@ Akiyama, M., et al. (2025). Generative AI-driven artificial DNA design for enhan
 
 **Manato Akiyama**
 Kitasato University, School of Frontier Engineering
-📧 [akiyama@dna.bio.keio.ac.jp](mailto:akiyama@dna.bio.keio.ac.jp)
+📧 [akiyama.manato@kitasato-u.ac.jp](mailto:akiyama.manato@kitasato-u.ac.jp)
