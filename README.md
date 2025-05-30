@@ -96,8 +96,8 @@ python test.py \
 
 | Model                | Description                | Link                                         |
 | -------------------- | -------------------------- | -------------------------------------------- |
-| `aligned_model.pt`   | Trained with alignments    | [📥 Download](https://drive.google.com/xxxx) |
-| `unaligned_model.pt` | Trained without alignments | [📥 Download](https://drive.google.com/yyyy) |
+| `unaligned_model.pt` | Trained without alignments(SOTA) | [📥 Download](https://drive.google.com/file/d/1fJeTPh8MnH8fe_UA0SPxxXTCKouxcy3j/view?usp=drive_link) |
+| `aligned_model.pt`   | Trained with alignments    | [📥 Download](https://drive.google.com/file/d/10sq137YwEhmr3OBw_Klt-Wd38tmmeHsV/view?usp=drive_link) |
 
 ---
 
