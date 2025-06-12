@@ -163,6 +163,18 @@ Use this to adapt the model to new species pairs or functional domains!
 
 ---
 
+## 📊 Datasets
+
+| Dataset | Description | Link |
+| ------- | ----------- | ---- |
+| **Training Data** | 4.97M ortholog pairs from 2,138 bacterial species | [📥 Download](https://drive.google.com/file/d/1lmUVb8jQYdGNxeAC73Xeg7h-17BQVntO/view?usp=drive_link) |
+| **Species-pair Data** | Test sets and fine-tuning data for specific species pairs | [📥 Download](https://drive.google.com/file/d/1Qba8jXkWleWmWBULtqKBPBWw7C7KxfdG/view?usp=drive_link) |
+
+All datasets use standard FASTA format with [OMA species IDs](https://omabrowser.org/All/oma-species.txt).
+
+
+---
+
 ## 📚 Citation
 
 ```
