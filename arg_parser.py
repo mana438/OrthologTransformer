@@ -34,8 +34,8 @@ def get_args():
     
     # beam search
     parser.add_argument("--use_beam", action="store_true", help="ビームサーチを使用する場合に指定")
-    parser.add_argument("--beam_size", type=int, default=1, help="ビームサーチ時のビーム幅")  # ← 通常の greedy 相当
-    parser.add_argument("--num_return_sequences", type=int, default=1, help="ビームサーチで返すシーケンスの数")  # ← 上と合わせる
+    parser.add_argument("--beam_size", type=int, default=20, help="ビームサーチ時のビーム幅")  # ← 通常の greedy 相当
+    parser.add_argument("--num_return_sequences", type=int, default=20, help="ビームサーチで返すシーケンスの数")  # ← 上と合わせる
     parser.add_argument("--num_beam_groups", type=int, default=1, help="Diverse Beam Search のグループ数")  # ← バニラなら 1
     parser.add_argument("--diversity_strength", type=float, default=0.0, help="ビーム間の類似度ペナルティ")  # ← 0.0 = 無効
     parser.add_argument("--temperature", type=float, default=1.0, help="softmax の温度")  # ← 通常ソフトマックス

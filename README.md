@@ -35,53 +35,106 @@ schedulefree==1.4
 ViennaRNA==2.6.4
 ```
 
+
 ---
 
-## 🔍 Inference (Predict New Sequences!)
+## 🔍 Inference (Predict and Reconstruct Sequences)
 
-Just run:
+Run the following command to predict a gene sequence adapted from a source species to a target species:
 
 ```bash
-python test.py \
+python run_inference.py \
   --model_input results/train/model_best.pt \
-  --ortholog_files_test data/test/ECOLI_IDESA.fasta \
+  --ortholog_files_test ECOLI_IDESA.fasta \
   --result_folder results/test
 ```
 
-This will generate a gene adapted from `IDESA` (source) to `ECOLI` (target).
+This generates predicted sequences transforming from `IDESA` (source) to `ECOLI` (target).
+
+---
 
 ### 🧾 FASTA Input Format
 
 ```fasta
->target_species
+>ECOLI00000
 
->source_species
-ATGGCC...
+
+>IDESA05470
+ATGAACTTTCCCCGCGCTTCCCGCCTGATGCAGGCCGCCGTTCTCGGCGGGCTGATGGCC...
 ```
 
-* Headers should be species IDs like `ECOLI`, `IDESA`
-* Lookup valid IDs here 👉 [OMA species list](https://omabrowser.org/All/oma-species.txt)
-* Normally the target sequence is left blank
-* If you use `--edition_fasta`, the target contains a **starting draft sequence**
+* Name the FASTA file as `<TARGET>_<SOURCE>.fasta`, e.g., `ECOLI_IDESA.fasta`
+* The first sequence (with no bases) is the target to be predicted. The second sequence is the source to be used for inference.
+* Lookup valid species codes here 👉 [OMA species list](https://omabrowser.org/All/oma-species.txt)
+* The `target` sequence should normally be **left blank**
+* If you use `--edition_fasta`, the `target` contains a **starting draft sequence**
+
+---
+
+### 📂 Output Files
+
+After running the script, the following files will appear in your `--result_folder`:
+
+| File                        | Description                                                  |
+| --------------------------- | ------------------------------------------------------------ |
+| `args_test.json`            | Parameters used for the inference run                        |
+| `completed_sequences.fasta` | DNA sequences (predicted + source), in standard FASTA format |
+| `completed_proteins.fasta`  | Protein sequences translated from the DNA output             |
+
+---
+
+### 🧬 Output Example (`completed_sequences.fasta`)
+
+```fasta
+>ECOLI00000
+ATGAACAAAACACTCTGCTCTCTCTTTCTGGTCACAGCCAGCTTGATTACACCAGCAAGC...
+
+>IDESA05470
+ATGAACTTTCCCCGCGCTTCCCGCCTGATGCAGGCCGCCGTTCTCGGCGGGCTGATGGCC...
+```
+
+The first sequence is the predicted gene in the target species (`ECOLI`).
+The second is the original input sequence from the source species (`IDESA`).
+Each entry is in standard FASTA format with no blank lines between them.
+
+---
 
 ### ✏️ With Edition Mode
 
 ```bash
-python test.py \
+python run_inference.py \
   --model_input results/train/model_best.pt \
-  --ortholog_files_test data/test/ECOLI_IDESA.fasta \
+  --ortholog_files_test ECOLI_IDESA.fasta \
   --edition_fasta \
   --result_folder results/test_edit
 ```
 
 Let the model refine your initial output!
 
+
+
+### 🚀 Beam Search Decoding
+
+To explore multiple high-quality candidate sequences in a single run, activate beam search:
+
+```bash
+python run_inference.py \
+  --model_input results/train/model_best.pt \
+  --ortholog_files_test ECOLI_IDESA.fasta \
+  --result_folder results/test_beam \
+  --use_beam \            # turn on beam search
+  --beam_size 8 \         # width of the beam (≥1)
+  --num_return_sequences 4    # how many sequences to keep
+```
+
+
+
 ### 🔬 With MCTS Optimization
 
 ```bash
-python test.py \
+python run_inference.py \
   --model_input results/train/model_best.pt \
-  --ortholog_files_test data/test/ECOLI_IDESA.fasta \
+  --ortholog_files_test ECOLI_IDESA.fasta \
   --result_folder results/test_mcts \
   --mcts
 ```
@@ -110,7 +163,7 @@ OrthologTransformer flies on GPU (CUDA). Use one if you can!
 ## 🏋️‍♀️ Training From Scratch
 
 ```bash
-python codon_convert.py \
+python train.py \
   --ortholog_files_train data/train/*.fasta \
   --result_folder results/train \
   --num_epochs 100 \
@@ -152,7 +205,7 @@ ATGGCC...
 ## 🔁 Fine-Tuning on New Pairs
 
 ```bash
-python codon_convert.py \
+python train.py \
   --model_input pretrained/aligned_model.pt \
   --ortholog_files_train data/finetune_pairs/*.fasta \
   --result_folder results/finetune \

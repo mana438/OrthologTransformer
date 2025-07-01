@@ -34,7 +34,7 @@ args = get_args()
 
 result_folder = args.result_folder
 # 標準出力先の変更
-sys.stdout = open(os.path.join(result_folder, "output.txt"), "a") 
+# sys.stdout = open(os.path.join(result_folder, "output.txt"), "a") 
 # パラメータ出力
 with open(os.path.join(result_folder, "args_test.json"), "w") as f:
     json.dump(vars(args), f, indent=4)
@@ -85,7 +85,7 @@ pad_idx = dataset.vocab['<pad>']
 source_sequences = []
 target_sequences = []
 predicted_sequences = []
-
+source_ids, target_ids = [], [] 
 
 # 1) ループ開始前に EOS トークンのインデックスを取得しておく
 eos_idx = dataset.vocab['<eos>']
@@ -94,6 +94,8 @@ with torch.no_grad():
     for batch in test_loader:
         tgt = batch[1].to(device)
         src = batch[2].to(device)
+        tgt_ids_batch = batch[3]
+        src_ids_batch = batch[4] 
 
         # 既存の dec_ipt 設定はそのまま
         dec_ipt = tgt[:, :2]
@@ -123,11 +125,16 @@ with torch.no_grad():
             for i, beam_list in enumerate(all_beams):
                 src_seq = alignment.extract_sequences(src[i:i+1,1:])[0]
                 tgt_seq = alignment.extract_sequences(tgt[i:i+1,1:])[0]
+                src_id  = src_ids_batch[i]
+                tgt_id  = tgt_ids_batch[i]
+                
                 for seq in beam_list:
                     cleaned = alignment.extract_sequences(seq.unsqueeze(0)[:,1:])  # List[List[int]]
                     predicted_sequences += cleaned
                     source_sequences.append(src_seq)
                     target_sequences.append(tgt_seq)
+                    source_ids.append(src_id)
+                    target_ids.append(tgt_id) 
 
         else:
             # 元の Greedy 生成ループはそのまま残す
@@ -145,6 +152,9 @@ with torch.no_grad():
             source_sequences += alignment.extract_sequences(src[:,1:])
             target_sequences += alignment.extract_sequences(tgt[:,1:])
             predicted_sequences += alignment.extract_sequences(dec_ipt[:,1:])
+            source_ids += list(src_ids_batch)
+            target_ids += list(tgt_ids_batch)
+
 
         # --- ビームサーチ対応ここまで ---
 
@@ -160,6 +170,50 @@ with torch.no_grad():
     predicted_protein_sequences_all = [str(Seq(dna).translate(to_stop=True)) for dna in predicted_sequences_all]
     source_protein_sequences = [str(Seq(dna).translate(to_stop=True)) for dna in source_sequences_dna]
     target_protein_sequences = [str(Seq(dna).translate(to_stop=True)) for dna in target_sequences_dna]
+    
+    
+    
+    
+    filled_dna_records = []
+    filled_protein_records = []
+    
+    for i, (src_id, tgt_id, src_dna, tgt_dna, pred_dna,
+            src_aa, tgt_aa, pred_aa) in enumerate(zip(
+                source_ids, target_ids,
+                source_sequences_dna, target_sequences_dna, predicted_sequences_all,
+                source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)):
+    
+        has_original_target = (not args.edition_fasta and tgt_dna)
+    
+        # --- ID 命名（出力用） ---
+        if args.use_beam:
+            beam_idx = (i % args.beam_size) + 1
+            pred_id = f"{tgt_id}_predicted_beam{beam_idx}" if has_original_target else f"{tgt_id}_beam{beam_idx}"
+        else:
+            pred_id = f"{tgt_id}_predicted" if has_original_target else tgt_id
+    
+        # --- DNA FASTA 出力 ---
+        filled_dna_records.append(SeqRecord(Seq(pred_dna), id=pred_id, description=""))
+        filled_dna_records.append(SeqRecord(Seq(src_dna),  id=src_id, description=""))
+        if has_original_target:
+            filled_dna_records.append(SeqRecord(Seq(tgt_dna), id=tgt_id, description=""))
+    
+        # --- Protein FASTA 出力 ---
+        filled_protein_records.append(SeqRecord(Seq(pred_aa), id=pred_id, description=""))
+        filled_protein_records.append(SeqRecord(Seq(src_aa),  id=src_id, description=""))
+        if has_original_target:
+            filled_protein_records.append(SeqRecord(Seq(tgt_aa), id=tgt_id, description=""))
+    
+    # --- 保存 ---
+    filled_dna_path = os.path.join(result_folder, "completed_sequences.fasta")
+    SeqIO.write(filled_dna_records, filled_dna_path, "fasta")
+    print(f"Filled DNA FASTA saved to {filled_dna_path}")
+    
+    filled_protein_path = os.path.join(result_folder, "completed_proteins.fasta")
+    SeqIO.write(filled_protein_records, filled_protein_path, "fasta")
+    print(f"Filled protein FASTA saved to {filled_protein_path}")
+
+    
     
     if args.plot:
         # コドンのアラインメント
@@ -182,38 +236,6 @@ with torch.no_grad():
     print("GC ratio " +  str(CG_ratio(predicted_sequences_all)))
     # print('\n'.join(predicted_sequences_all))
     
-    # ファイルパスを指定
-    # ユニークなファイルパスを生成
-    fasta_output_path = os.path.join(result_folder, "predicted_sequences.fasta")
-    counter = 1
-    while os.path.exists(fasta_output_path):
-        fasta_output_path = os.path.join(result_folder, f"predicted_sequences_{counter}.fasta")
-        counter += 1
-    # FASTA形式で保存
-    SeqIO.write([SeqRecord(Seq(seq), id=f"seq_{(i // args.beam_size) + 1}_beam{(i % args.beam_size) + 1}" if args.use_beam else f"seq_{i+1}", description="") for i, seq in enumerate(predicted_sequences_all)], fasta_output_path, "fasta")
-
-    
-    print(f"Predicted sequences saved to {fasta_output_path}")
-    
-    # 各オルソログごとに source, target, predicted のアミノ酸配列をまとめて保存
-    all_protein_records = []
-        
-    for i, (src_aa, tgt_aa, pred_aa) in enumerate(zip(source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)):
-        sample_idx = (i // args.beam_size) + 1 if args.use_beam else i + 1
-        beam_idx = (i % args.beam_size) + 1 if args.use_beam else None
-        all_protein_records.append(SeqRecord(Seq(src_aa), id=f"ortholog_{sample_idx}_source_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_source_protein", description=""))
-        all_protein_records.append(SeqRecord(Seq(tgt_aa), id=f"ortholog_{sample_idx}_target_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_target_protein", description=""))
-        all_protein_records.append(SeqRecord(Seq(pred_aa), id=f"ortholog_{sample_idx}_predicted_beam{beam_idx}" if args.use_beam else f"ortholog_{sample_idx}_predicted_protein", description=""))
-
-    # ユニークなファイル名を生成
-    fasta_protein_output_path = os.path.join(result_folder, "source_target_predicted_protein.fasta")
-    counter = 1
-    while os.path.exists(fasta_protein_output_path):
-        fasta_protein_output_path = os.path.join(result_folder, f"source_target_predicted_protein_{counter}.fasta")
-        counter += 1
-    # 保存
-    SeqIO.write(all_protein_records, fasta_protein_output_path, "fasta")
-    print(f"Protein sequences (source, target, predicted) saved to {fasta_protein_output_path}")
 
 
     if args.mcts:

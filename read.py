@@ -23,7 +23,6 @@ class Vocab:
             
             try:
                 with open(self.json_path, 'r') as file:
-                    print("here!")
                     data = json.load(file)
                     self.token_to_index = data.get('token_to_index', {})
                     self.index_to_token = {int(key): val for key, val in data.get('index_to_token', {}).items()}
@@ -108,18 +107,20 @@ class OrthologDataset(Dataset):
                     continue  # スキップ
 
             sequences = []
+            ids = []
             # fastaファイルを読み込み、各配列を辞書に格納
             for seq_record in SeqIO.parse(ortholog_file, "fasta"):
                 sequences.append(str(seq_record.seq))
+                ids.append(seq_record.id)
 
             # ペアが有効である場合、データに追加する
             if self.is_valid_pair(sequences[0], sequences[1]):
                 seq1_codons = self.convert_to_codons(sequences[0], species_name_1)                            
                 seq2_codons = self.convert_to_codons(sequences[1], species_name_2)                            
                  # 基本のデータを追加
-                dataset.append((group_number, seq1_codons, seq2_codons))
+                dataset.append((group_number, seq1_codons, seq2_codons, ids[0], ids[1]))
                 if reverse:
-                    dataset.append((group_number, seq2_codons, seq1_codons))
+                    dataset.append((group_number, seq2_codons, seq1_codons, ids[1], ids[0]))
         
         return dataset
 
