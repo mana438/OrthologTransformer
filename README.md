@@ -64,8 +64,8 @@ ATGAACTTTCCCCGCGCTTCCCGCCTGATGCAGGCCGCCGTTCTCGGCGGGCTGATGGCC...
 ```
 
 * Name the FASTA file as `<TARGET>_<SOURCE>.fasta`, e.g., `ECOLI_IDESA.fasta`
-* The first sequence (with no bases) is the target to be predicted. The second sequence is the source to be used for inference.
 * Lookup valid species codes here 👉 [OMA species list](https://omabrowser.org/All/oma-species.txt)
+* The first sequence (with no bases) is the target to be predicted. The second sequence is the source to be used for inference.
 * The `target` sequence should normally be **left blank**
 * If you use `--edition_fasta`, the `target` contains a **starting draft sequence**
 

@@ -33,9 +33,9 @@ import pickle
 args = get_args()
 
 result_folder = args.result_folder
-# 標準出力先の変更
+# Change standard output destination
 # sys.stdout = open(os.path.join(result_folder, "output.txt"), "a") 
-# パラメータ出力
+# Output parameters
 with open(os.path.join(result_folder, "args_test.json"), "w") as f:
     json.dump(vars(args), f, indent=4)
 
@@ -44,14 +44,14 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 default_species_path = os.path.join(script_dir, "prokaryotes_group.txt")
 default_vocab_path = os.path.join(script_dir, "vocab_OMA.json")
 
-# OrthologDataset オブジェクトを作成する
+# Create an OrthologDataset object
 dataset = OrthologDataset(default_species_path,default_vocab_path)
-# テスト対象のオルソログ関係ファイルのリスト
+# List of ortholog relationship files for testing
 ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
 test_dataset = dataset.load_data(ortholog_files_test, False)
 print("test: ", len(test_dataset), flush=True)
 test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn)
-# GPUが利用可能な場合は 'cuda:0' にマップ、そうでない場合は CPU にマップ
+# Map to 'cuda:0' if GPU is available, otherwise map to CPU
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     
@@ -59,24 +59,22 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 vocab_size_target = dataset.len_vocab_target()
 vocab_size_input = dataset.len_vocab_input()
 
-# モデルインスタンス生成
+# Create a model instance
 model = CodonTransformer(vocab_size_target, vocab_size_input, args.d_model, args.nhead, args.num_encoder_layers, args.num_decoder_layers, args.dim_feedforward, args.dropout).to(device)
 # model = torch.compile(model, backend="aot_eager")
 
-# 重みの読み込み
+# Load weights
 if args.model_input:
-    # モデルをロード
     weights = torch.load(args.model_input, map_location=device)
     model.load_state_dict(weights, strict=True)
 
 print(f'Total number of parameters: {count_parameters(model)}', flush=True)
 
 
-# torch.compile()で最適化
 # model = torch.compile(model, backend="aot_eager")
 # model = torch.compile(model)
 
-# 評価
+# evaluation
 model.eval()
 total_alignment_score = 0.0
 alignment = alignment(dataset.vocab)
@@ -87,7 +85,7 @@ target_sequences = []
 predicted_sequences = []
 source_ids, target_ids = [], [] 
 
-# 1) ループ開始前に EOS トークンのインデックスを取得しておく
+# 1) Obtain EOS token index before starting the loop
 eos_idx = dataset.vocab['<eos>']
 
 with torch.no_grad():
@@ -97,14 +95,13 @@ with torch.no_grad():
         tgt_ids_batch = batch[3]
         src_ids_batch = batch[4] 
 
-        # 既存の dec_ipt 設定はそのまま
         dec_ipt = tgt[:, :2]
         if args.edition_fasta:
             dec_ipt = tgt[:, :-1]
 
         src_key_padding_mask = (src == pad_idx).to(device)
 
-        # --- ここからビームサーチ対応 (args.use_beam で分岐) ---
+        # --- Beam search support (branching with args.use_beam) ---
         if args.use_beam:
             all_beams = beam_search(
                 model, src, dec_ipt,
@@ -121,7 +118,7 @@ with torch.no_grad():
 
             
             
-            # 各サンプル・各ビームを predicted_sequences, source_sequences, target_sequences に追加
+            # For each sample and each beam, add to predicted_sequences, source_sequences, target_sequences
             for i, beam_list in enumerate(all_beams):
                 src_seq = alignment.extract_sequences(src[i:i+1,1:])[0]
                 tgt_seq = alignment.extract_sequences(tgt[i:i+1,1:])[0]
@@ -137,7 +134,7 @@ with torch.no_grad():
                     target_ids.append(tgt_id) 
 
         else:
-            # 元の Greedy 生成ループはそのまま残す
+            # original Greedy generation loop
             for _ in range(700):
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
                     output_codon_logits = model(
@@ -155,14 +152,7 @@ with torch.no_grad():
             source_ids += list(src_ids_batch)
             target_ids += list(tgt_ids_batch)
 
-
-        # --- ビームサーチ対応ここまで ---
-
-    # 以下以降のシーケンス変換／プロット／保存処理は変更不要です
-
-
-    
-    # ギャップを取り除く
+    # Remove gaps
     predicted_sequences = [[item for item in row if item != dataset.vocab['---']] for row in predicted_sequences]
     predicted_sequences_all =  [''.join([dataset.vocab.index_to_token[c] for c in seq]) for seq in predicted_sequences]
     source_sequences_dna = [''.join([dataset.vocab.index_to_token[c] for c in seq]) for seq in source_sequences]
@@ -185,26 +175,26 @@ with torch.no_grad():
     
         has_original_target = (not args.edition_fasta and tgt_dna)
     
-        # --- ID 命名（出力用） ---
+        # --- ID naming (for output) ---
         if args.use_beam:
             beam_idx = (i % args.beam_size) + 1
             pred_id = f"{tgt_id}_predicted_beam{beam_idx}" if has_original_target else f"{tgt_id}_beam{beam_idx}"
         else:
             pred_id = f"{tgt_id}_predicted" if has_original_target else tgt_id
     
-        # --- DNA FASTA 出力 ---
+        # --- DNA FASTA output ---
         filled_dna_records.append(SeqRecord(Seq(pred_dna), id=pred_id, description=""))
         filled_dna_records.append(SeqRecord(Seq(src_dna),  id=src_id, description=""))
         if has_original_target:
             filled_dna_records.append(SeqRecord(Seq(tgt_dna), id=tgt_id, description=""))
     
-        # --- Protein FASTA 出力 ---
+        # --- Protein FASTA output ---
         filled_protein_records.append(SeqRecord(Seq(pred_aa), id=pred_id, description=""))
         filled_protein_records.append(SeqRecord(Seq(src_aa),  id=src_id, description=""))
         if has_original_target:
             filled_protein_records.append(SeqRecord(Seq(tgt_aa), id=tgt_id, description=""))
     
-    # --- 保存 ---
+    # --- saving ---
     filled_dna_path = os.path.join(result_folder, "completed_sequences.fasta")
     SeqIO.write(filled_dna_records, filled_dna_path, "fasta")
     print(f"Filled DNA FASTA saved to {filled_dna_path}")
@@ -216,7 +206,7 @@ with torch.no_grad():
     
     
     if args.plot:
-        # コドンのアラインメント
+        # Codon alignment
         plot_obj, score_ratio, src_tgt_mean, tgt_pred_mean = alignment.plot_alignment_scores(source_sequences, target_sequences, predicted_sequences)
         save_with_unique_filename(result_folder, "align.png", plot_obj)
     
@@ -224,7 +214,7 @@ with torch.no_grad():
             f.write(f"src-tgt mean: {src_tgt_mean:.6f}\n")
             f.write(f"tgt-pred mean: {tgt_pred_mean:.6f}\n")
     
-        # アミノ酸のアラインメント
+        # amino acid alignment
         plot_obj_aa, score_ratio_aa, src_tgt_mean_aa, tgt_pred_mean_aa = alignment.plot_alignment_scores_aa(source_protein_sequences, target_protein_sequences, predicted_protein_sequences_all)
         save_with_unique_filename(result_folder, "align_aa.png", plot_obj_aa)
     

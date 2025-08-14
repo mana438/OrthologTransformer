@@ -15,7 +15,7 @@ class Vocab:
         self.json_path = json_path
         self.token_to_index = {}
         self.index_to_token = {}
-        self.load_json()  # JSONファイルからデータを読み込む
+        self.load_json()  # Load data from JSON file
         self.build_vocab(tokens)
 
     def load_json(self):
@@ -27,11 +27,11 @@ class Vocab:
                     self.token_to_index = data.get('token_to_index', {})
                     self.index_to_token = {int(key): val for key, val in data.get('index_to_token', {}).items()}
             except json.JSONDecodeError:
-                # JSON ファイルが空または不正な場合は、初期化する
+                # If the JSON file is empty or invalid, initialize
                 self.token_to_index = {}
                 self.index_to_token = {}
         else:
-            # ファイルが存在しない場合は、初期化する
+            # If the file does not exist, initialize
             self.token_to_index = {}
             self.index_to_token = {}
 
@@ -50,8 +50,7 @@ class Vocab:
                 index = len(self.token_to_index)
                 self.token_to_index[token] = index
                 self.index_to_token[index] = token
-                self.save_json()  # 新しいトークンを追加するたびにJSONファイルを更新
-
+                self.save_json()  # Update the JSON file every time a new token is added
 
     def __len__(self):
         return len(self.token_to_index)
@@ -63,18 +62,18 @@ class OrthologDataset(Dataset):
     def __init__(self, OMA_species, json_path):
         self.data = []
         self.ortholog_groups = set()
-        # すべての菌種名のリストを取得
+        # Get the list of all species names
         with open(OMA_species, 'r') as file:
             species_names = file.read().splitlines()
         
-        # すべてのコドンのリスト
+        # List of all codons
         codons = [f"{x}{y}{z}" for x in "ACGT" for y in "ACGT" for z in "ACGT"]
         gap = ["---"]
 
-        # 特殊文字
+        # Special tokens
         spc = ['<pad>', '<bos>', '<eos>']
 
-        # コドンと菌種名の両方を含むトークンのリストを作成
+        # Create a token list containing both codons and species names
         tokens =  spc + codons + gap + species_names
         self.vocab = Vocab(tokens, json_path)
         self.vocab_target = spc + codons + gap
@@ -83,11 +82,11 @@ class OrthologDataset(Dataset):
     def load_data(self, ortholog_files, reverse):
         dataset = []
         
-        # オルソログ関係ファイルを1つずつ読み込む
+        # Read each ortholog relationship file
         for ortholog_file in ortholog_files:
-            # デフォルト値
+            # Default value
             group_number = "NA"
-            # パターン①: group番号あり
+            # Pattern 1: group number present
             match = re.search(r"group(\d+)_([A-Z0-9]+)_([A-Z0-9]+)_\d+\.fasta", ortholog_file)
 
             if match:
@@ -95,8 +94,8 @@ class OrthologDataset(Dataset):
                 species_name_1 = match.group(2)
                 species_name_2 = match.group(3)
             else:
-                # パターン②: group番号なし → species1_species2.fasta のような形式を仮定
-                # 例: ECOLI_IDESA.fasta, ECOLI_IDESA_1.fasta
+                # Pattern 2: no group number → assume format like species1_species2.fasta
+                # Example: ECOLI_IDESA.fasta, ECOLI_IDESA_1.fasta
                 basename = os.path.basename(ortholog_file)
                 fallback_match = re.search(r"([A-Z0-9]+)_([A-Z0-9]+)(?:_\d+)?\.fasta", basename)
                 if fallback_match:
@@ -104,20 +103,20 @@ class OrthologDataset(Dataset):
                     species_name_2 = fallback_match.group(2)
                 else:
                     print(f"Filename pattern not recognized: {ortholog_file}")
-                    continue  # スキップ
+                    continue
 
             sequences = []
             ids = []
-            # fastaファイルを読み込み、各配列を辞書に格納
+            # Read the fasta file and store each sequence in a dictionary
             for seq_record in SeqIO.parse(ortholog_file, "fasta"):
                 sequences.append(str(seq_record.seq))
                 ids.append(seq_record.id)
 
-            # ペアが有効である場合、データに追加する
+            # If the pair is valid, add to the dataset
             if self.is_valid_pair(sequences[0], sequences[1]):
                 seq1_codons = self.convert_to_codons(sequences[0], species_name_1)                            
                 seq2_codons = self.convert_to_codons(sequences[1], species_name_2)                            
-                 # 基本のデータを追加
+                 # Add base data
                 dataset.append((group_number, seq1_codons, seq2_codons, ids[0], ids[1]))
                 if reverse:
                     dataset.append((group_number, seq2_codons, seq1_codons, ids[1], ids[0]))
@@ -132,7 +131,7 @@ class OrthologDataset(Dataset):
         return codon_seq
 
 
-    # 配列ペアが有効であるかどうかを判断する
+    # Determine if the sequence pair is valid
     def is_valid_pair(self, seq1, seq2):
         length1, length2 = len(seq1), len(seq2)
         valid_chars = set("ATGC-")
@@ -140,8 +139,8 @@ class OrthologDataset(Dataset):
         return (
             length1 <= 2100
             and length2 <= 2100
-            and length1 % 3 == 0  # length1 が 3 で割り切れる条件を追加
-            and length2 % 3 == 0  # length2 が 3 で割り切れる条件を追加
+            and length1 % 3 == 0  # Added condition: length1 divisible by 3
+            and length2 % 3 == 0  # Added condition: length2 divisible by 3
             and set(seq1.upper()) <= valid_chars
             and set(seq2.upper()) <= valid_chars
         )
@@ -152,11 +151,10 @@ class OrthologDataset(Dataset):
     def len_vocab_target(self):
         return len(self.vocab_target)
 
-    # 指定されたインデックスのデータを返す
+    # Return the data at the specified index
     def __getitem__(self, index):
         return self.data[index]
 
-
-    # データセットのサイズを返す
+    # Return the size of the dataset
     def __len__(self):
         return len(self.data)

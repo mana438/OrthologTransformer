@@ -22,10 +22,10 @@ import copy
 class alignment:
     def  __init__(self, vocab):
         self.vocab = vocab
-        # 数値 3 から 66 を適当な 1 文字にマッピングする辞書
+        # Dictionary mapping numbers 3 to 66 to arbitrary single characters
         self.num_to_char = {}
         self.char_to_num = {}
-        start_ascii = 33  # '!' の ASCII コード
+        start_ascii = 33  # ASCII code for '!'
         for i in range(3, 67):
             char = chr(start_ascii + i - 3)
             if char == '-':
@@ -34,13 +34,13 @@ class alignment:
             self.num_to_char[i] = char
             self.char_to_num[char] = i
 
-    # 1と2に挟まれた配列を抽出    
+    # Extract sequences between 1 and 2  
     def extract_sequences(self, tensor):
         result = []
         for row in tensor:
             # start_idx = (row == 1).nonzero(as_tuple=True)[0][0] + 1
             one_indices = (row == 1).nonzero(as_tuple=True)[0]
-            # 1が存在しない場合、行の最初から抽出を開始します
+            # If 1 does not exist, start extraction from the beginning of the row
             start_idx = one_indices[0] + 1 if one_indices.size(0) > 0 else 0
         
             end_indices_2 = (row == 2).nonzero(as_tuple=True)[0]
@@ -58,19 +58,18 @@ class alignment:
 
             end_idx = min(end_idx_2, end_idx_0)
 
-            #extracted_sequence = row[start_idx:end_idx].tolist()
-            # **抽出された配列から0、1、2を取り除く**
+            # Remove 0, 1, and 2 from the extracted sequence
             extracted_sequence = [num for num in row[start_idx:end_idx].tolist() if num not in [0, 1, 2]]
             result.append(extracted_sequence)
         return result
 
 
-    # 数値リストを文字列に変換する関数
+    # Function to convert a list of numbers into a string
     def convert_num_list_to_string(self, num_list, num_to_char):
         return ''.join([self.num_to_char[num] for num in num_list])
 
 
-    # シーケンスをアラインメントする関数
+    # Function to align sequences
     def align_sequences(self, seq_pair):
         seq1, seq2 = seq_pair
         seq1 = ''.join([self.num_to_char[num] for num in seq1])
@@ -97,17 +96,16 @@ class alignment:
         
     def align_sequences_aa(self, pair):
         s1, s2 = pair
-        # BLOSUM62 行列を読み込み
+        # BLOSUM62
         blosum62 = substitution_matrices.load("BLOSUM62")
         
-        # gap_open, gap_extend は適宜調整 (例: -10, -0.5)
         gap_open = -10
         gap_extend = -0.5
     
         # globalds: global alignment with a scoring dictionary
         alignments = pairwise2.align.globalds(s1, s2, blosum62, gap_open, gap_extend)
     
-        # 最適アラインメントを一つ取得（複数候補が返る場合あり）
+        # Get one best alignment (multiple candidates may be returned)
         best_alignment = alignments[0]
         aligned_s1 = best_alignment.seqA
         aligned_s2 = best_alignment.seqB
@@ -115,22 +113,19 @@ class alignment:
         return aligned_s1, aligned_s2, score
         
     def predict_structure(self, dna_sequence):
-
-        # Biopythonを用いてDNA配列をアミノ酸配列に変換
         dna_seq = Seq(dna_sequence)
         amino_acid_seq = dna_seq.translate()
 
-
-        # アミノ酸配列をFASTA形式で保存
+        # Save amino acid sequence in FASTA format
         fasta_file_path = '../job_result/query.fasta'
         record = SeqRecord(amino_acid_seq, id="query_sequence", description="Translated sequence")
         os.makedirs(os.path.dirname(fasta_file_path), exist_ok=True)  # ディレクトリが存在しない場合に作成
         with open(fasta_file_path, 'w') as fasta_file:
             SeqIO.write(record, fasta_file, "fasta")
 
-        # 実行スクリプトのパス
+        # Path to execution script
         alphafold_script_path = '../alphafold/run_alphafold.sh'
-        # シェルコマンドをディレクトリ移動せずに実行
+        # Run shell command without changing directory
         result = subprocess.run([
             alphafold_script_path,
             '-a', '0,1,2,3',
@@ -141,7 +136,6 @@ class alignment:
             '-t', '2020-05-14'
         ], capture_output=True, text=True)
 
-        # 実行結果を表示
         print("Standard Output:\n", result.stdout)
         print("Standard Error:\n", result.stderr)
 
@@ -149,7 +143,7 @@ class alignment:
 
 
     def chunks(self, lst, chunk_size):
-        """リストを指定されたチャンクサイズで分割するジェネレータ"""
+        """Generator to split a list into chunks of specified size"""
         for i in range(0, len(lst), chunk_size):
             yield lst[i:i + chunk_size]
 
@@ -157,27 +151,26 @@ class alignment:
         src_tgt_scores = []
         tgt_pred_scores = []
         score_ratio = []
-        # リストの各要素から10個ずつ取り出してタプルにし、それらのタプルのリストを作成
+        # Take 10 elements from each list to form tuples and create a list of those tuples
         batch_num = 30
         src_seqs = list(self.chunks(src_seqs, batch_num))
         tgt_seqs = list(self.chunks(tgt_seqs, batch_num))
         pred_seqs = list(self.chunks(pred_seqs, batch_num))
 
         for src_seq, tgt_seq, pred_seq in zip(src_seqs, tgt_seqs, pred_seqs):
-            # print(tgt_seq)
-            # source_sequences, target_sequencesをペアワイズアラインメント
+            # Pairwise alignment of source_sequences and target_sequences
             with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 results_src_tgt = list(executor.map(self.align_sequences, zip(src_seq, tgt_seq)))
             aligned_src, aligned_tgt, src_tgt_score = zip(*results_src_tgt)
 
-            # target_sequences,predicted_sequencesをペアワイズアラインメント
+            # Pairwise alignment of target_sequences and predicted_sequences
             with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 results_tgt_pred = list(executor.map(self.align_sequences, zip(tgt_seq, pred_seq)))
             aligned_tgt, aligned_pred, tgt_pred_score = zip(*results_tgt_pred)
-            # self.print_alignment(aligned_tgt, aligned_pred, tgt_pred_score) #アラインメントを出力
+            # self.print_alignment(aligned_tgt, aligned_pred, tgt_pred_score)
 
 
-            # アラインメントスコアを配列長(ここではtgt_seqの長さ)で正規化
+            # Normalize alignment scores by sequence length (here, length of tgt_seq)
             src_tgt_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
                                        for score, tgt in zip(src_tgt_score, tgt_seq)]
             tgt_pred_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
@@ -188,25 +181,25 @@ class alignment:
             tgt_pred_scores += tgt_pred_score_corrected
         
         plt.figure()
-        # 散布図をプロット
+        # Plot scatter plot
         plt.scatter(src_tgt_scores, tgt_pred_scores)
 
         src_tgt_mean = np.mean(src_tgt_scores)
         tgt_pred_mean = np.mean(tgt_pred_scores)
 
-        ax = plt.gca()  # 現在のAxesオブジェクトを取得
+        ax = plt.gca()  # Get current Axes object
 
-        # 右下にsrc_tgt_scoresの平均値を表示
+        # Display average of src_tgt_scores at bottom-right
         plt.text(0.95, 0.05, f'src-tgt Ave: {src_tgt_mean:.3f}', 
                 horizontalalignment='right', verticalalignment='bottom',
                 transform=ax.transAxes, fontsize=12)
 
-        # 左上にtgt_pred_scoresの平均値を表示
+        # Display average of tgt_pred_scores at top-left
         plt.text(0.05, 0.95, f'tgt-pred Ave: {tgt_pred_mean:.3f}', 
                 horizontalalignment='left', verticalalignment='top',
                 transform=ax.transAxes, fontsize=12)
         
-        # x軸とy軸の最小値と最大値を計算
+        # Calculate min and max values for x and y axes
         min_value = min(min(src_tgt_scores), min(tgt_pred_scores))
         max_value = max(max(src_tgt_scores), max(tgt_pred_scores))
 
@@ -214,7 +207,7 @@ class alignment:
         # max_value = 0.6
 
         
-        # x=y の直線をプロット
+        # Plot x=y line
         plt.plot([min_value, max_value], [min_value, max_value], 'r--')
 
         plt.xlabel(xlabel)
@@ -230,24 +223,24 @@ class alignment:
         tgt_pred_scores = []
         score_ratio = []
 
-        # リストの分割単位
+        # Chunk size for list splitting
         batch_num = 30
         src_seqs = list(self.chunks(src_seqs, batch_num))
         tgt_seqs = list(self.chunks(tgt_seqs, batch_num))
         pred_seqs = list(self.chunks(pred_seqs, batch_num))
 
         for src_seq, tgt_seq, pred_seq in zip(src_seqs, tgt_seqs, pred_seqs):
-            # source_sequences, target_sequencesをペアワイズアラインメント
+            # Perform pairwise alignment of source_sequences and target_sequences
             with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 results_src_tgt = list(executor.map(self.align_sequences_aa, zip(src_seq, tgt_seq)))
             aligned_src, aligned_tgt, src_tgt_score = zip(*results_src_tgt)
 
-            # target_sequences, predicted_sequencesをペアワイズアラインメント
+            # Perform pairwise alignment of target_sequences and predicted_sequences
             with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 results_tgt_pred = list(executor.map(self.align_sequences_aa, zip(tgt_seq, pred_seq)))
             aligned_tgt, aligned_pred, tgt_pred_score = zip(*results_tgt_pred)
 
-            # アラインメントスコアを配列長(ここではtgt_seqの長さ)で正規化
+            # Normalize alignment scores by sequence length (here, length of tgt_seq)
             src_tgt_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
                                        for score, tgt in zip(src_tgt_score, tgt_seq)]
             tgt_pred_score_corrected = [score / len(tgt) if len(tgt) > 0 else 0 
@@ -260,20 +253,16 @@ class alignment:
             tgt_pred_scores += tgt_pred_score_corrected
         
         plt.figure()
-        # 散布図をプロット
+        # Plot scatter plot
         plt.scatter(src_tgt_scores, tgt_pred_scores)
 
         src_tgt_mean = np.mean(src_tgt_scores)
         tgt_pred_mean = np.mean(tgt_pred_scores)
 
-        ax = plt.gca()  # 現在のAxesオブジェクトを取得
-
-        # 右下にsrc-tgt_scoresの平均値を表示
+        ax = plt.gca()
         plt.text(0.95, 0.05, f'src-tgt Ave: {src_tgt_mean:.3f}', 
                  horizontalalignment='right', verticalalignment='bottom',
                  transform=ax.transAxes, fontsize=12)
-
-        # 左上にtgt-pred_scoresの平均値を表示
         plt.text(0.05, 0.95, f'tgt-pred Ave: {tgt_pred_mean:.3f}', 
                  horizontalalignment='left', verticalalignment='top',
                  transform=ax.transAxes, fontsize=12)
@@ -281,7 +270,6 @@ class alignment:
         min_value = min(min(src_tgt_scores), min(tgt_pred_scores))
         max_value = max(max(src_tgt_scores), max(tgt_pred_scores))
         
-        # x=y の直線をプロット
         plt.plot([min_value, max_value], [min_value, max_value], 'r--')
 
         plt.xlabel(xlabel)
@@ -291,7 +279,7 @@ class alignment:
 
     
     def print_alignment(self, aligned_seq1, aligned_seq2, score):
-        # アラインメントされたシーケンスを表示
+        # Display aligned sequences
         for aligned_seq1, aligned_seq2, score in zip(aligned_sequences1, aligned_sequences2, scores):
             print("score: " + str(score))
             print("target sequences")
@@ -308,14 +296,14 @@ def custom_collate_fn(batch):
     tgt_ids, src_ids = [], [] 
 
     for item in batch:
-        # バッチの要素を分解
+        # Decompose elements of the batch
         ortholog_group, tgt, inp, tgt_id, src_id = item[:5]  # 最初の3つを確実に取得
         ortholog_groups.append(ortholog_group)
         targets.append(torch.tensor(tgt))
         inputs.append(torch.tensor(inp))
         tgt_ids.append(tgt_id)
         src_ids.append(src_id)
-    # パディング処理
+    # Apply padding
     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
     return ortholog_groups, targets_padded, inputs_padded, tgt_ids, src_ids
@@ -324,22 +312,22 @@ def custom_collate_fn(batch):
 def count_nonzero_matches(tensor1, tensor2):
     assert tensor1.shape == tensor2.shape, "The tensors are not the same shape"
 
-    # テンソル同士が一致している部分をTrue、それ以外をFalseとするBoolテンソルを作成
+    # Create a boolean tensor where matching elements are True, others False
     matches = tensor1 == tensor2
 
-    # 0同士の一致は無視するため、非ゼロ要素のみを対象とする
+    # Ignore matches of 0 by targeting only non-zero elements
     nonzero_matches = matches & (tensor1 != 0) & (tensor2 != 0)
 
-    # 非ゼロ要素の一致数を計算
+    # Count the number of matches among non-zero elements
     nonzero_match_count = nonzero_matches.sum().item()
 
-    # テンソル1とテンソル2の非ゼロ要素ペアの数を計算
+    # Count the number of non-zero element pairs in tensor1 and tensor2
     nonzero_element_pairs = (tensor1 != 0)
     nonzero_element_pair_count = nonzero_element_pairs.sum().item()
 
     return nonzero_match_count, nonzero_element_pair_count
     
-#　パラメータを読み込む
+# Load parameters
 def load_params(json_file):
     with open(json_file, 'r') as f:
         params = json.load(f)
@@ -357,17 +345,17 @@ def check_condition(args, hvd):
 
 def allreduce(source_sequences, target_sequences, predicted_sequences, vocab):
     import horovod.torch as hvd
-    # 最大の長さに合わせて、シーケンスをパディング
+    # Pad sequences to match the maximum length
     source_sequences = [seq + [vocab['<pad>']] * (1000 - len(seq)) for seq in source_sequences]
     target_sequences = [seq + [vocab['<pad>']] * (1000 - len(seq)) for seq in target_sequences]
     predicted_sequences = [seq + [vocab['<pad>']] * (1000 - len(seq)) for seq in predicted_sequences]
 
-    # 既存のhvd.allgatherコード
+    # Existing hvd.allgather code
     all_source_sequences = hvd.allgather(torch.tensor(source_sequences))
     all_target_sequences = hvd.allgather(torch.tensor(target_sequences))
     all_predicted_sequences = hvd.allgather(torch.tensor(predicted_sequences))
 
-     # パディング部分を取り除く
+    # Remove padding
     all_source_sequences = [seq[:seq.tolist().index(vocab['<pad>'])].tolist() if vocab['<pad>'] in seq else seq.tolist() for seq in all_source_sequences]
     all_target_sequences = [seq[:seq.tolist().index(vocab['<pad>'])].tolist() if vocab['<pad>'] in seq else seq.tolist() for seq in all_target_sequences]
     all_predicted_sequences = [seq[:seq.tolist().index(vocab['<pad>'])].tolist() if vocab['<pad>'] in seq else seq.tolist() for seq in all_predicted_sequences]
@@ -384,13 +372,13 @@ def CG_ratio(sequences):
 
 def save_with_unique_filename(result_folder, base_name, plot_obj):
     """
-    ユニークなファイルパスを生成してプロットを保存する
-    :param result_folder: 保存先のフォルダ
-    :param base_name: 基本のファイル名（例: "align.png"）
-    :param plot_obj: 保存対象のプロットオブジェクト
+    Generate a unique file path and save the plot
+    :param result_folder: Folder to save to
+    :param base_name: Base file name (e.g., "align.png")
+    :param plot_obj: Plot object to save
     """
     output_path = os.path.join(result_folder, base_name)
-    for counter in range(1, 1000):  # 最大999個まで試行
+    for counter in range(1, 1000):
         if not os.path.exists(output_path):
             break
         name, ext = os.path.splitext(base_name)
@@ -406,8 +394,8 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
 
     N = src.size(0)
     device = src.device
-    beams = [(start_tokens, torch.zeros(N, device=device))]  # 初期ビーム
-    finished = [[] for _ in range(N)]  # 各サンプルごとに完了ビームを格納
+    beams = [(start_tokens, torch.zeros(N, device=device))]  # Initial beam
+    finished = [[] for _ in range(N)]  # Store completed beams for each sample
 
     group_size = beam_size // num_beam_groups
     
@@ -431,7 +419,7 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
                 log_probs = F.log_softmax(logits[:, -1] / temperature, dim=-1)
 
 
-                # 多様性ペナルティを加える
+                # Add diversity penalty
                 if group_id > 0:
                     prev_tokens = [cand[0][:, -1] for cand in all_candidates[-group_size:]]
                     if prev_tokens:
@@ -443,7 +431,7 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
 
                 if step < sampling_steps:
                     for _ in range(group_size):
-                        # 各ビームごとに別々に Top-k サンプリングを行う
+                        # Perform Top-k sampling separately for each beam
                         topk_probs, topk_idx = torch.topk(log_probs.exp(), sampling_k, dim=-1)  # (N, k)
                         sampled_token_idx = torch.multinomial(topk_probs, num_samples=1).squeeze(1)  # (N,)
                         next_tok = topk_idx[torch.arange(N), sampled_token_idx].unsqueeze(1)  # (N,1)
@@ -461,13 +449,13 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
                         all_candidates.append((new_seq, new_logp))
 
 
-        # 上位 beam_size 本を選択（平均スコアで簡易評価）
+        # Select top beam_size sequences (simple evaluation by average score)
         scores = torch.stack([cand[1].mean() for cand in all_candidates])
         # top_scores, idx = torch.topk(scores, beam_size)
         top_scores, idx = torch.topk(scores, min(len(scores), beam_size))
         beams = [all_candidates[i] for i in idx]
 
-        # EOS で終わっているビームを finished に追加
+        # Add beams ending with EOS to finished
         for seq, lp in beams:
             ended = (seq[:, -1] == eos_idx)
             for i in range(N):
@@ -479,7 +467,7 @@ def beam_search(model, src, start_tokens, pad_idx, eos_idx, beam_size, max_len, 
         
         step += 1
         
-    # 各サンプルごとに num_return_sequences 本ずつ返す
+    # Return num_return_sequences for each sample
     outputs = []
     for i in range(N):
         seqs = [s for s, _ in sorted(finished[i], key=lambda x: x[1], reverse=True)]
