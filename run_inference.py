@@ -15,6 +15,8 @@ from read import OrthologDataset
 import os
 import time
 import sys
+from pathlib import Path
+from datetime import datetime
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -29,13 +31,21 @@ import glob
 from arg_parser import get_args
 import pickle
 
+from functools import partial
+
 
 args = get_args()
 
-result_folder = args.result_folder
-# Change standard output destination
-# sys.stdout = open(os.path.join(result_folder, "output.txt"), "a") 
-# Output parameters
+# Decide and create result folder (default: ./results/<YYYYmmdd_HHMMSS>)
+if args.result_folder:
+    result_folder = args.result_folder
+else:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    result_folder = os.path.join(
+        script_dir, "results", datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
+Path(result_folder).mkdir(parents=True, exist_ok=True)
+
 with open(os.path.join(result_folder, "args_test.json"), "w") as f:
     json.dump(vars(args), f, indent=4)
 
@@ -47,12 +57,15 @@ default_vocab_path = os.path.join(script_dir, "vocab_OMA.json")
 # Create an OrthologDataset object
 dataset = OrthologDataset(default_species_path,default_vocab_path)
 # List of ortholog relationship files for testing
-ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
+ortholog_files_test = sorted(glob.glob(args.ortholog_files_test.replace("'", "")))
+# ortholog_files_test = glob.glob(args.ortholog_files_test.replace("'", ""))
+
 test_dataset = dataset.load_data(ortholog_files_test, False)
 print("test: ", len(test_dataset), flush=True)
-test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=custom_collate_fn)
+test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=partial(custom_collate_fn, mode="test", max_len=700))
+
 # Map to 'cuda:0' if GPU is available, otherwise map to CPU
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     
 # token size
@@ -99,7 +112,7 @@ with torch.no_grad():
         if args.edition_fasta:
             dec_ipt = tgt[:, :-1]
 
-        src_key_padding_mask = (src == pad_idx).to(device)
+        # src_key_padding_mask = (src == pad_idx).to(device)
 
         # --- Beam search support (branching with args.use_beam) ---
         if args.use_beam:
@@ -137,9 +150,9 @@ with torch.no_grad():
             # original Greedy generation loop
             for _ in range(700):
                 with autocast(device_type='cuda', dtype=torch.bfloat16):
-                    output_codon_logits = model(
-                        dec_ipt, src, src_key_padding_mask=src_key_padding_mask
-                    )
+                    # output_codon_logits = model(dec_ipt, src, src_key_padding_mask=src_key_padding_mask)
+                    output_codon_logits = model(dec_ipt, src)
+                    
                     output_codon_probs = F.softmax(output_codon_logits, dim=2)
                     next_item = torch.argmax(output_codon_probs, dim=2)[:, -1].unsqueeze(1)
                 dec_ipt = torch.cat((dec_ipt, next_item), dim=1)
@@ -184,9 +197,9 @@ with torch.no_grad():
     
         # --- DNA FASTA output ---
         filled_dna_records.append(SeqRecord(Seq(pred_dna), id=pred_id, description=""))
-        filled_dna_records.append(SeqRecord(Seq(src_dna),  id=src_id, description=""))
-        if has_original_target:
-            filled_dna_records.append(SeqRecord(Seq(tgt_dna), id=tgt_id, description=""))
+        # filled_dna_records.append(SeqRecord(Seq(src_dna),  id=src_id, description=""))
+        # if has_original_target:
+        #     filled_dna_records.append(SeqRecord(Seq(tgt_dna), id=tgt_id, description=""))
     
         # --- Protein FASTA output ---
         filled_protein_records.append(SeqRecord(Seq(pred_aa), id=pred_id, description=""))

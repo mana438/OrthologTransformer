@@ -8,6 +8,12 @@ import sys
 import torch.nn.functional as F
 import shutil 
 
+def redirect_stdout_to_result_folder(result_folder, filename="stdout.log"):
+    os.makedirs(result_folder, exist_ok=True)
+    f = open(os.path.join(result_folder, filename), "a", buffering=1)  # 行バッファ
+    sys.stdout = f
+    sys.stderr = f  # エラーも同じファイルに
+
 class Node:
     def __init__(self, sequence, dec_ipt, parent=None, depth=0):
         self.sequence = sequence  # Current codon sequence
@@ -28,7 +34,7 @@ class Node:
 
     def expand(self, model, vocab, src, len_predicted_seq):
         # If the node is not fully expanded, create new child nodes
-        if self.visits > 3 and not self.is_fully_expanded() and len(self.sequence) < len_predicted_seq:
+        if self.visits > 5 and not self.is_fully_expanded() and len(self.sequence) < len_predicted_seq:
             # Get token probabilities
             output_codon = model(self.dec_ipt, src)
             # Apply Softmax to normalize probabilities
@@ -46,7 +52,8 @@ class Node:
                 predicted_token = vocab.index_to_token[next_item[0].item()]
                 # print(f"Top {i+1} predicted token: {predicted_token}, value: {next_value[0].item()}")
                 
-                if next_value[0].item() > 0.1:
+                # if next_value[0].item() > 0.1:
+                if i == 0 or next_value[0].item() > 0.1:
                     # Add the predicted token to the decoder input
                     dec_ipt = torch.cat((self.dec_ipt, next_item), dim=1)
                 
@@ -68,14 +75,13 @@ def reward(sequence, target_gc_content=0.365):
     
     gc_content_reward = 20/100**abs(gc_content - target_gc_content)
     mfe_reward = abs(mfe)/20
-    # all_reward = gc_content_reward + mfe_reward
-    all_reward = gc_content_reward
+    all_reward = gc_content_reward + mfe_reward
     return all_reward, mfe, gc_content
 
-def simulate(node, model, src, template_seq, vocab, epoch):
+def simulate(node, model, src, template_seq, vocab, epoch, checkpoint):
     # Rollout phase: randomly select actions and calculate reward at the final state
     
-    if (epoch % 500) == 0:
+    if (epoch % checkpoint) == 0:
         sequence = node.sequence.copy()  # Copy the current sequence
         dec_ipt = node.dec_ipt.detach()
         for i in range(1000):
@@ -111,6 +117,8 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, result_folder, iterat
     gc_contents = []  # List to store GC content values
     mfes = []  # List to store Minimum Free Energy (MFE) values
     tree_depths = []  # List to store tree depths
+    predicted_gc_content = (predicted_seq.count('G') + predicted_seq.count('C')) / len(predicted_seq)
+    checkpoint = 50
 
     # Main loop of MCTS
     template_seq = predicted_seq.copy()
@@ -120,15 +128,17 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, result_folder, iterat
             node = node.best_child()
         node.expand(model, vocab, src, len(predicted_seq)) # Expand only if node visits exceed a certain threshold
         if node.children:
-            child = node.children[0]  # Get the first added child node
+            # child = node.children[0]  # Get the first added child node
+            child = node.best_child() if node.children else node
         else:
             child = node
-        sequence = simulate(child, model, src, template_seq, vocab, i)  # Run simulation for the child node
+        sequence = simulate(child, model, src, template_seq, vocab, i, checkpoint)  # Run simulation for the child node
 
-        if (i % 500) == 0:
+        if (i % checkpoint) == 0:
             template_seq = sequence.copy()
 
-        all_reward, mfe, gc_content = reward(sequence)
+        # all_reward, mfe, gc_content = reward(sequence, predicted_gc_content)
+        all_reward, mfe, gc_content = reward(sequence, 0.505)
         
         backpropagate(child, all_reward)  # Backpropagate the value
 
@@ -140,9 +150,9 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, result_folder, iterat
         if (i + 1) % 100 == 0:  # Every 100 iterations, plot and save graphs
             print("tree depth =", child.depth)
             print("full seq length =", len(sequence))
-            print("full seq =", sequence)
             print("MFE = " , mfe, flush=True)
             print("GC content =", gc_content)
+            print("full seq =", sequence)
             plt.figure(figsize=(16, 4))
             plt.subplot(1, 4, 1)
             plt.plot(rewards)
@@ -174,6 +184,7 @@ def main_loop(root, model, vocab, tgt, src, predicted_seq, result_folder, iterat
 
 
 def mcts(model, test_loader, vocab, device, edition_fasta, predicted_sequences, result_folder):
+    redirect_stdout_to_result_folder(result_folder)
     # shutil.copy("./mcts.py", os.path.join(result_folder, "mcts.py"))
     for batch in test_loader:
         tgt = batch[1].to(device)

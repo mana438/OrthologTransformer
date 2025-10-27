@@ -17,6 +17,7 @@ import statistics
 import numpy as np
 import json
 import copy
+from functools import partial
 
 
 class alignment:
@@ -291,21 +292,53 @@ class alignment:
         num_samples += len(src)
 
 
-def custom_collate_fn(batch):
+# def custom_collate_fn(batch):
+#     ortholog_groups, targets, inputs = [], [], []
+#     tgt_ids, src_ids = [], [] 
+
+#     for item in batch:
+#         # Decompose elements of the batch
+#         ortholog_group, tgt, inp, tgt_id, src_id = item[:5]  # 最初の3つを確実に取得
+#         ortholog_groups.append(ortholog_group)
+#         targets.append(torch.tensor(tgt))
+#         inputs.append(torch.tensor(inp))
+#         tgt_ids.append(tgt_id)
+#         src_ids.append(src_id)
+#     # Apply padding
+#     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
+#     inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
+#     return ortholog_groups, targets_padded, inputs_padded, tgt_ids, src_ids
+
+
+
+def custom_collate_fn(batch, mode="train", max_len=700):
     ortholog_groups, targets, inputs = [], [], []
-    tgt_ids, src_ids = [], [] 
+    tgt_ids, src_ids = [], []
 
     for item in batch:
-        # Decompose elements of the batch
-        ortholog_group, tgt, inp, tgt_id, src_id = item[:5]  # 最初の3つを確実に取得
+        ortholog_group, tgt, inp, tgt_id, src_id = item[:5]
         ortholog_groups.append(ortholog_group)
-        targets.append(torch.tensor(tgt))
-        inputs.append(torch.tensor(inp))
+        # トークンIDなら long を明示（必要に応じて調整）
+        targets.append(torch.tensor(tgt, dtype=torch.long))
+        inputs.append(torch.tensor(inp, dtype=torch.long))
         tgt_ids.append(tgt_id)
         src_ids.append(src_id)
-    # Apply padding
+
     targets_padded = pad_sequence(targets, batch_first=True, padding_value=0)
-    inputs_padded = pad_sequence(inputs, batch_first=True, padding_value=0)
+    inputs_padded  = pad_sequence(inputs,  batch_first=True, padding_value=0)
+
+    if mode == "test":
+        # すでに pad_sequence 済み（バッチ内の最大長）→ max_len まで追加パディング
+        # 「必ず max_len 未満」の前提なので切り捨て分岐は不要
+        t_pad_len = max_len - targets_padded.size(1)
+        i_pad_len = max_len - inputs_padded.size(1)
+
+        # 念のためアサート（開発中の安全網）
+        assert t_pad_len > 0 and i_pad_len > 0, "系列長が max_len 以上になっています。"
+
+        targets_padded = F.pad(targets_padded, (0, t_pad_len), value=0)
+        inputs_padded  = F.pad(inputs_padded,  (0, i_pad_len), value=0)
+
     return ortholog_groups, targets_padded, inputs_padded, tgt_ids, src_ids
 
 

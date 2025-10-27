@@ -51,6 +51,10 @@ python run_inference.py \
 
 This generates predicted sequences transforming from `IDESA` (source) to `ECOLI` (target).
 
+> **Note:**  
+> If `--result_folder` is not specified, the program automatically creates a folder such as `results/<timestamp>/`.  
+> If you do specify a folder (e.g., `--result_folder results/test`), it will also be created automatically if it does not exist.
+
 ---
 
 ### 🧾 FASTA Input Format

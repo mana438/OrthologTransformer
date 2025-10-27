@@ -168,7 +168,7 @@ for epoch in range(args.num_epochs):
             tgt_key_padding_mask = (dec_ipt == pad_idx).to(device)
 
             with autocast(device_type='cuda', dtype=torch.bfloat16):
-                output_codon = model(dec_ipt, src, None, src_key_padding_mask=src_key_padding_mask, tgt_key_padding_mask=tgt_key_padding_mask)
+                output_codon = model(dec_ipt, src, None, src_key_padding_mask=None, tgt_key_padding_mask=None)
                 output_codon = output_codon.transpose(1, 2) # for CrossEntropyLoss
                 loss = criterion(output_codon, dec_tgt)
 

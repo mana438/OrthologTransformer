@@ -15,13 +15,13 @@ def get_args():
 
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--plot', action='store_true')
-    parser.add_argument('--reverse', type=bool, default=False)
+    parser.add_argument('--reverse', action='store_true')
 
     parser.add_argument('--learning_rate', type=float, default=0.0001)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--num_epochs', type=int, default=100)
-    parser.add_argument('--horovod', type=bool, default=False)
-    parser.add_argument('--mcts', type=bool, default=False)
+    parser.add_argument('--horovod', action='store_true')
+    parser.add_argument('--mcts', action='store_true', help='Use MCTS')
 
     # model parameter
     parser.add_argument('--d_model', type=int, default=512)
@@ -30,7 +30,7 @@ def get_args():
     parser.add_argument('--num_decoder_layers', type=int, default=20)
     parser.add_argument('--dim_feedforward', type=int, default=1024)
     parser.add_argument('--dropout', type=float, default=0.0)
-    parser.add_argument('--memory_mask', type=bool, default=False)
+    parser.add_argument('--memory_mask', action='store_true')
     
     # beam search
     parser.add_argument("--use_beam", action="store_true", help="Specify when using beam search")
