@@ -156,6 +156,13 @@ python run_inference.py \
 | `unaligned_model.pt` | Trained without alignments(SOTA) | [📥 Download](https://drive.google.com/file/d/1fJeTPh8MnH8fe_UA0SPxxXTCKouxcy3j/view?usp=drive_link) |
 | `aligned_model.pt`   | Trained with alignments    | [📥 Download](https://drive.google.com/file/d/10sq137YwEhmr3OBw_Klt-Wd38tmmeHsV/view?usp=drive_link) |
 
+
+⚠️ **Important note on decoding for `unaligned_model.pt`**
+
+Because `unaligned_model.pt` is trained without alignment constraints, it allows a broader range of sequence modifications, including non-synonymous substitutions and indels.  
+While this increases the expressive power of the model, it also expands the search space and may result in structurally unstable sequences.  
+To improve generation robustness and structural consistency, the use of **beam search decoding** is strongly recommended.
+
 ---
 
 ## ⚡ GPU Support
@@ -224,7 +231,7 @@ Use this to adapt the model to new species pairs or functional domains!
 
 | Dataset | Description | Link |
 | ------- | ----------- | ---- |
-| **Training Data** | 4.97M ortholog pairs from 2,138 bacterial species | [📥 Download]https://drive.google.com/file/d/1lmUVb8jQYdGNxeAC73Xeg7h-17BQVntO/view?usp=drive_link) |
+| **Training Data** | 4.97M ortholog pairs from 2,138 bacterial species | [📥 Download](https://drive.google.com/file/d/1SnmZ0QwvVWUq-X59xtgfwtRR7h1NmXFB/view?usp=drive_link) |
 | **Species-pair Data** | Test sets and fine-tuning data for specific species pairs | [📥 Download](https://drive.google.com/file/d/1Qba8jXkWleWmWBULtqKBPBWw7C7KxfdG/view?usp=drive_link) |
 
 All datasets use standard FASTA format with [OMA species IDs](https://omabrowser.org/All/oma-species.txt).

@@ -330,11 +330,11 @@ def custom_collate_fn(batch, mode="train", max_len=700):
     if mode == "test":
         # すでに pad_sequence 済み（バッチ内の最大長）→ max_len まで追加パディング
         # 「必ず max_len 未満」の前提なので切り捨て分岐は不要
-        t_pad_len = max_len - targets_padded.size(1)
-        i_pad_len = max_len - inputs_padded.size(1)
+        t_pad_len = max_len + 3 - targets_padded.size(1)
+        i_pad_len = max_len + 3 - inputs_padded.size(1)
 
         # 念のためアサート（開発中の安全網）
-        assert t_pad_len > 0 and i_pad_len > 0, "系列長が max_len 以上になっています。"
+        assert t_pad_len >= 0 and i_pad_len >= 0, f"系列長が max_len 以上です: targets_len={targets_padded.size(1)}, inputs_len={inputs_padded.size(1)}, max_len={max_len}"
 
         targets_padded = F.pad(targets_padded, (0, t_pad_len), value=0)
         inputs_padded  = F.pad(inputs_padded,  (0, i_pad_len), value=0)
