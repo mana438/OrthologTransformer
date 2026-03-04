@@ -15,6 +15,19 @@ OrthologTransformer is a Transformer-based deep learning model that lets you **i
 
 ---
 
+
+## 📄 Paper
+
+Our work has been published in **Nature Communications**:
+
+**Cross-species gene redesign leveraging ortholog information and generative modeling**  
+Manato Akiyama, Motohiko Tashiro, Ying Huang, Mika Uehara, Taiki Kanzaki, Mitsuhiro Itaya, Masakazu Kataoka, Kenji Miyamoto, Yasubumi Sakakibara  
+
+🔗 https://www.nature.com/articles/s41467-026-69966-0
+
+---
+
+
 ## 📦 Requirements
 
 Install everything with:
@@ -227,24 +240,33 @@ Use this to adapt the model to new species pairs or functional domains!
 
 ---
 
+
 ## 📊 Datasets
 
 | Dataset | Description | Link |
 | ------- | ----------- | ---- |
 | **Training Data** | 4.97M ortholog pairs from 2,138 bacterial species | [📥 Download](https://drive.google.com/file/d/1SnmZ0QwvVWUq-X59xtgfwtRR7h1NmXFB/view?usp=drive_link) |
-| **Species-pair Data** | Test sets and fine-tuning data for specific species pairs | [📥 Download](https://drive.google.com/file/d/1Qba8jXkWleWmWBULtqKBPBWw7C7KxfdG/view?usp=drive_link) |
+| **Large-scale Benchmark Test Set (Fig.3)** | Test dataset used for the large-scale benchmark across 45 bacterial species (Fig.3 in the paper) | [📥 Download](https://drive.google.com/file/d/1dp_ZV8pZ_u0G0EmQro5KTn8ucog_MVhi/view?usp=drive_link) |
+| **Species-pair Data** | Test sets and fine-tuning data for specific species pairs (Table 1 experiments) | [📥 Download](https://drive.google.com/file/d/1Qba8jXkWleWmWBULtqKBPBWw7C7KxfdG/view?usp=drive_link) |
 
 All datasets use standard FASTA format with [OMA species IDs](https://omabrowser.org/All/oma-species.txt).
 
 
-
 ---
-
 ## 📚 Citation
 
-```
-Manato Akiyama, Motohiko Tashiro, Ying Huang, Mika Uehara, Taiki Kanzaki, Mitsuhiro Itaya, Masakazu Kataoka, Kenji Miyamoto, and Yasubumi Sakakibara (2025). Generative AI-driven artificial DNA design for enhancing inter-species gene activation and enzymatic degradation of PET. bioRxiv. https://doi.org/10.1101/2025.05.08.652991
-```
+If you use this project in your research, please cite:
+
+```bibtex
+@article{akiyama2026orthologtransformer,
+  title={Cross-species gene redesign leveraging ortholog information and generative modeling},
+  author={Akiyama, Manato and Tashiro, Motohiko and Huang, Ying and Uehara, Mika and Kanzaki, Taiki and Itaya, Mitsuhiro and Kataoka, Masakazu and Miyamoto, Kenji and Sakakibara, Yasubumi},
+  journal={Nature Communications},
+  year={2026},
+  volume={17},
+  pages={2120},
+  doi={10.1038/s41467-026-69966-0}
+}
 
 ---
 
