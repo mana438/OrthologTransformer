@@ -267,6 +267,7 @@ If you use this project in your research, please cite:
   pages={2120},
   doi={10.1038/s41467-026-69966-0}
 }
+```
 
 ---
 
